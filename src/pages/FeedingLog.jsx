@@ -1,188 +1,67 @@
-import React, { useState } from 'react';
-import {
-    Card,
-    Row,
-    Col,
-    Typography,
-    Select,
-    Button,
-    Table,
-    Tag,
-    Space,
-    Divider
-} from 'antd';
-import {
-    SyncOutlined,
-    FileTextOutlined,
-    FileExcelOutlined,
-    FilePdfOutlined,
-    EyeOutlined,
-    CheckCircleOutlined,
-    CloseCircleOutlined,
-    ContainerOutlined
-} from '@ant-design/icons';
+import React, { useState, useEffect } from 'react';
+import { Card, Row, Col, Typography, Select, Button, Table, Tag, Space, Divider, message } from 'antd';
+import { SyncOutlined, FileTextOutlined, FileExcelOutlined, FilePdfOutlined, EyeOutlined, CheckCircleOutlined, CloseCircleOutlined, ContainerOutlined } from '@ant-design/icons';
+import api from '../api'; // Impor axios
 
 const { Title, Text } = Typography;
 const { Option } = Select;
 
-// --- MOCK DATA TABEL FEEDING LOG ---
-const logData = [
-    {
-        key: '1',
-        timestamp: '25/06/2026 08:00:12',
-        pondType: 'Perlakuan (ADM)',
-        suhu: 28.4,
-        do: 5.8,
-        ph: 7.3,
-        tds: 840,
-        targetPakan: '1.2%',
-        jumlahPakan: 800,
-        durasi: 12,
-        status: 'Berhasil',
-    },
-    {
-        key: '2',
-        timestamp: '25/06/2026 07:00:05',
-        pondType: 'Kontrol (Timer)',
-        suhu: 28.5,
-        do: 5.7,
-        ph: 7.3,
-        tds: 845,
-        targetPakan: '-',
-        jumlahPakan: 1000,
-        durasi: 15,
-        status: 'Berhasil',
-    },
-    {
-        key: '3',
-        timestamp: '25/06/2026 12:00:11',
-        pondType: 'Perlakuan (ADM)',
-        suhu: 29.1,
-        do: 4.9,
-        ph: 7.1,
-        tds: 860,
-        targetPakan: '1.0%',
-        jumlahPakan: 650,
-        durasi: 10,
-        status: 'Berhasil',
-    },
-    {
-        key: '4',
-        timestamp: '25/06/2026 12:00:01',
-        pondType: 'Kontrol (Timer)',
-        suhu: 29.0,
-        do: 4.8,
-        ph: 7.1,
-        tds: 870,
-        targetPakan: '-',
-        jumlahPakan: 1000,
-        durasi: 15,
-        status: 'Berhasil',
-    },
-    {
-        key: '5',
-        timestamp: '25/06/2026 23:00:07',
-        pondType: 'Perlakuan (ADM)',
-        suhu: 27.6,
-        do: 3.8,
-        ph: 6.9,
-        tds: 910,
-        targetPakan: '0.6%',
-        jumlahPakan: 350,
-        durasi: 6,
-        status: 'Gagal',
-    },
-];
-
 const FeedingLog = () => {
-    // State untuk filter (Nantinya dikirim ke backend FastAPI sebagai query params)
     const [loading, setLoading] = useState(false);
+    const [logData, setLogData] = useState([]);
 
-    // Fungsi simulasi refresh
-    const handleRefresh = () => {
+    // State untuk Kartu Ringkasan
+    const [summary, setSummary] = useState({ totalEvent: 0, totalPakan: 0, successCount: 0, failCount: 0 });
+
+    const fetchLogs = async () => {
         setLoading(true);
-        setTimeout(() => setLoading(false), 1000);
+        try {
+            const response = await api.get('/api/feeding-log');
+            if (response.data.status === 'success') {
+                const data = response.data.data;
+                setLogData(data);
+
+                // Kalkulasi data untuk kartu summary di atas tabel
+                const success = data.filter(item => item.status === 'Berhasil').length;
+                const totalFeed = data.reduce((sum, item) => sum + (item.jumlahPakan || 0), 0);
+
+                setSummary({
+                    totalEvent: data.length,
+                    totalPakan: totalFeed,
+                    successCount: success,
+                    failCount: data.length - success
+                });
+            }
+        } catch (error) {
+            message.error("Gagal menarik data log dari database.");
+            console.error(error);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    // Panggil fungsi saat halaman dimuat
+    useEffect(() => {
+        fetchLogs();
+    }, []);
+
+    const handleRefresh = () => {
+        fetchLogs();
     };
 
     // Konfigurasi Kolom Tabel
     const columns = [
-        {
-            title: 'Timestamp',
-            dataIndex: 'timestamp',
-            key: 'timestamp',
-            width: 150,
-        },
-        {
-            title: 'Pond Type',
-            dataIndex: 'pondType',
-            key: 'pondType',
-            render: (text) => (
-                <Text style={{ color: text.includes('ADM') ? '#1890ff' : '#595959', fontWeight: 500 }}>
-                    {text}
-                </Text>
-            ),
-        },
-        {
-            title: 'Suhu (°C)',
-            dataIndex: 'suhu',
-            key: 'suhu',
-            align: 'center',
-        },
-        {
-            title: 'DO (mg/L)',
-            dataIndex: 'do',
-            key: 'do',
-            align: 'center',
-        },
-        {
-            title: 'pH',
-            dataIndex: 'ph',
-            key: 'ph',
-            align: 'center',
-        },
-        {
-            title: 'TDS (ppm)',
-            dataIndex: 'tds',
-            key: 'tds',
-            align: 'center',
-        },
-        {
-            title: 'Output Fuzzy (Target Pakan)',
-            dataIndex: 'targetPakan',
-            key: 'targetPakan',
-            align: 'center',
-        },
-        {
-            title: 'Jumlah Pakan (gram)',
-            dataIndex: 'jumlahPakan',
-            key: 'jumlahPakan',
-            align: 'center',
-        },
-        {
-            title: 'Durasi Servo (detik)',
-            dataIndex: 'durasi',
-            key: 'durasi',
-            align: 'center',
-        },
-        {
-            title: 'Status Eksekusi',
-            dataIndex: 'status',
-            key: 'status',
-            align: 'center',
-            render: (status) => (
-                <Tag color={status === 'Berhasil' ? 'success' : 'error'} style={{ borderRadius: '12px', padding: '2px 10px' }}>
-                    {status}
-                </Tag>
-            ),
-        },
-        {
-            title: 'Aksi',
-            key: 'aksi',
-            align: 'center',
-            render: () => (
-                <Button type="text" icon={<EyeOutlined style={{ color: '#1890ff' }} />} />
-            ),
-        },
+        { title: 'Timestamp', dataIndex: 'timestamp', key: 'timestamp', width: 150 },
+        { title: 'Pond Type', dataIndex: 'pondType', key: 'pondType', render: (text) => (<Text style={{ color: text.includes('ADM') ? '#1890ff' : '#595959', fontWeight: 500 }}>{text}</Text>) },
+        { title: 'Suhu (°C)', dataIndex: 'suhu', key: 'suhu', align: 'center' },
+        { title: 'DO (mg/L)', dataIndex: 'do', key: 'do', align: 'center' },
+        { title: 'pH', dataIndex: 'ph', key: 'ph', align: 'center' },
+        { title: 'TDS (ppm)', dataIndex: 'tds', key: 'tds', align: 'center' },
+        { title: 'Output Fuzzy (Target Pakan)', dataIndex: 'targetPakan', key: 'targetPakan', align: 'center' },
+        { title: 'Jumlah Pakan (gram)', dataIndex: 'jumlahPakan', key: 'jumlahPakan', align: 'center' },
+        { title: 'Durasi Servo (detik)', dataIndex: 'durasi', key: 'durasi', align: 'center' },
+        { title: 'Status Eksekusi', dataIndex: 'status', key: 'status', align: 'center', render: (status) => (<Tag color={status === 'Berhasil' ? 'success' : 'error'} style={{ borderRadius: '12px', padding: '2px 10px' }}>{status}</Tag>) },
+        { title: 'Aksi', key: 'aksi', align: 'center', render: () => (<Button type="text" icon={<EyeOutlined style={{ color: '#1890ff' }} />} />) },
     ];
 
     return (
@@ -275,8 +154,8 @@ const FeedingLog = () => {
                                 <CheckCircleOutlined style={{ fontSize: '24px', color: '#52c41a' }} />
                             </div>
                             <div style={{ textAlign: 'left' }}>
-                                <Title level={2} style={{ margin: 0, color: '#52c41a' }}>17</Title>
-                                <Text type="secondary" style={{ fontSize: '12px' }}>94.44%</Text>
+                                <Title level={2} style={{ margin: 0, color: '#52c41a' }}>{summary.successCount}</Title>
+                                <Text type="secondary" style={{ fontSize: '12px' }}>{(summary.successCount / summary.totalEvent * 100).toFixed(2)} %</Text>
                             </div>
                         </div>
                     </Card>
@@ -304,7 +183,7 @@ const FeedingLog = () => {
                     dataSource={logData}
                     loading={loading}
                     pagination={{
-                        total: 18,
+                        total: logData.length,
                         pageSize: 10,
                         showSizeChanger: true,
                         showTotal: (total, range) => `Menampilkan ${range[0]}-${range[1]} dari ${total} data`

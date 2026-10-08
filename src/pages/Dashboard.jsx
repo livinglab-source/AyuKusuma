@@ -1,5 +1,5 @@
-import React from 'react';
-import { Row, Col, Card, Typography, Tag, Divider, Space, Badge } from 'antd';
+import React, { useState, useEffect } from 'react';
+import { Row, Col, Card, Typography, Tag, Divider, Space } from 'antd';
 import {
     CheckCircleOutlined,
     SyncOutlined,
@@ -9,6 +9,7 @@ import {
     LineChartOutlined
 } from '@ant-design/icons';
 import { Area } from '@ant-design/charts';
+import api from '../api'; // Impor konfigurasi axios yang baru dibuat
 
 const { Title, Text } = Typography;
 
@@ -66,6 +67,49 @@ const MiniAreaChart = ({ data, color }) => {
 };
 
 const Dashboard = () => {
+    // 1. Buat state untuk menyimpan data sensor yang ditarik dari API
+    const [sensorData, setSensorData] = useState({
+        suhu: '-',
+        do: '-',
+        ph: '-',
+        tds: '-'
+    });
+    const [lastSync, setLastSync] = useState('Belum sinkronisasi');
+
+    // 2. Buat fungsi untuk memanggil API
+    const fetchLatestSensorData = async () => {
+        try {
+            // Mengambil data terbaru khusus untuk kolam perlakuan (adm)
+            const response = await api.get('/api/sensor/latest/adm');
+
+            if (response.data.status === 'success') {
+                const data = response.data.data;
+                setSensorData({
+                    suhu: data.suhu?.toFixed(1) || '-',
+                    do: data.do?.toFixed(1) || '-',
+                    ph: data.ph?.toFixed(1) || '-',
+                    tds: data.tds || '-'
+                });
+
+                // Perbarui waktu sinkronisasi terakhir
+                const now = new Date();
+                setLastSync(`${now.getHours()}:${now.getMinutes().toString().padStart(2, '0')}:${now.getSeconds().toString().padStart(2, '0')}`);
+            }
+        } catch (error) {
+            console.error("Gagal mengambil data dari API:", error);
+        }
+    };
+
+    // 3. Gunakan useEffect untuk polling data setiap 5 detik
+    useEffect(() => {
+        fetchLatestSensorData(); // Ambil data saat halaman pertama kali dimuat
+
+        const interval = setInterval(() => {
+            fetchLatestSensorData();
+        }, 5000); // 5000 ms = 5 detik
+
+        return () => clearInterval(interval); // Bersihkan interval saat pengguna pindah halaman
+    }, []);
     return (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
 
@@ -75,9 +119,9 @@ const Dashboard = () => {
                     <SensorCard
                         icon={<DashboardOutlined />}
                         title="SUHU AIR"
-                        value="28.4"
+                        value={sensorData.suhu} // Ganti nilai statis dengan variabel state
                         unit="°C"
-                        status="Normal"
+                        status={sensorData.suhu >= 24 && sensorData.suhu <= 32 ? "Normal" : "Peringatan"}
                         range="24 - 32 °C"
                     />
                 </Col>
@@ -85,9 +129,9 @@ const Dashboard = () => {
                     <SensorCard
                         icon={<DashboardOutlined />}
                         title="DISSOLVED OXYGEN (DO)"
-                        value="5.8"
+                        value={sensorData.do}
                         unit="mg/L"
-                        status="Normal"
+                        status={sensorData.do >= 4 && sensorData.do <= 8 ? "Normal" : "Peringatan"}
                         range="4 - 8 mg/L"
                     />
                 </Col>
@@ -95,9 +139,9 @@ const Dashboard = () => {
                     <SensorCard
                         icon={<DashboardOutlined />}
                         title="pH AIR"
-                        value="7.3"
+                        value={sensorData.ph}
                         unit=""
-                        status="Normal"
+                        status={sensorData.ph >= 6.5 && sensorData.ph <= 8.5 ? "Normal" : "Peringatan"}
                         range="6.5 - 8.5"
                     />
                 </Col>
@@ -105,9 +149,9 @@ const Dashboard = () => {
                     <SensorCard
                         icon={<DashboardOutlined />}
                         title="TDS"
-                        value="840"
+                        value={sensorData.tds}
                         unit="ppm"
-                        status="Normal"
+                        status={sensorData.tds >= 400 && sensorData.tds <= 1500 ? "Normal" : "Peringatan"}
                         range="400 - 1500 ppm"
                     />
                 </Col>

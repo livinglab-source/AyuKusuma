@@ -1,27 +1,14 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import {
-    Card,
-    Row,
-    Col,
-    Typography,
-    Alert,
-    Divider,
-    Statistic,
-    Space,
-    Form,
-    Select,
-    InputNumber,
-    Button,
-    Table
+    Card, Row, Col, Typography, Alert, Divider, Statistic, Space,
+    Form, Select, InputNumber, Button, Table, message
 } from 'antd';
 import {
-    InfoCircleOutlined,
-    ExperimentOutlined,
-    SaveOutlined,
-    CalculatorOutlined,
-    CheckCircleOutlined
+    InfoCircleOutlined, ExperimentOutlined, SaveOutlined,
+    CalculatorOutlined, CheckCircleOutlined
 } from '@ant-design/icons';
 import { Line } from '@ant-design/charts';
+import api from '../api'; // Pastikan Axios diimpor
 
 const { Title, Text } = Typography;
 const { Option } = Select;
@@ -111,6 +98,75 @@ const MiniDualLineChart = ({ data, title }) => {
 };
 
 const Analysis = () => {
+    const [form] = Form.useForm();
+    const [loadingForm, setLoadingForm] = useState(false);
+    const [fcrTableData, setFcrTableData] = useState([]); // State untuk tabel
+    const [loadingTable, setLoadingTable] = useState(false);
+
+    // Fungsi untuk menarik data dari SQLite dan mengelompokkannya per minggu
+    const fetchFCRData = async () => {
+        setLoadingTable(true);
+        try {
+            const response = await api.get('/api/sampling');
+            if (response.data.status === 'success') {
+                const rawData = response.data.data;
+
+                // Transformasi data agar Kolam A dan Kontrol sejajar dalam 1 baris
+                const grouped = {};
+                rawData.forEach(item => {
+                    if (!grouped[item.minggu_ke]) {
+                        grouped[item.minggu_ke] = { key: item.minggu_ke, week: item.minggu_ke.toString() };
+                    }
+                    if (item.kolam === 'Perlakuan (A)') {
+                        grouped[item.minggu_ke].feedA = item.jumlah_pakan;
+                        grouped[item.minggu_ke].bioA = item.berat_akhir;
+                        grouped[item.minggu_ke].fcrA = item.fcr;
+                    } else {
+                        grouped[item.minggu_ke].feedB = item.jumlah_pakan;
+                        grouped[item.minggu_ke].bioB = item.berat_akhir;
+                        grouped[item.minggu_ke].fcrB = item.fcr;
+                    }
+                });
+
+                // Ubah objek menjadi array untuk Ant Design Table
+                setFcrTableData(Object.values(grouped));
+            }
+        } catch (error) {
+            console.error("Gagal menarik data FCR:", error);
+        } finally {
+            setLoadingTable(false);
+        }
+    };
+
+    // Panggil data saat halaman pertama kali dibuka
+    useEffect(() => {
+        fetchFCRData();
+    }, []);
+
+    const onFinishSampling = async (values) => {
+        setLoadingForm(true);
+        try {
+            const payload = {
+                minggu_ke: parseInt(values.minggu),
+                kolam: values.kolam,
+                berat_awal: values.beratAwal,
+                berat_akhir: values.beratAkhir,
+                jumlah_pakan: values.jumlahPakan
+            };
+
+            const response = await api.post('/api/sampling', payload);
+            if (response.data.status === 'success') {
+                message.success(`Data tersimpan! Nilai FCR terhitung: ${response.data.fcr}`);
+                form.resetFields(['beratAkhir', 'jumlahPakan']); // Reset input tertentu
+                fetchFCRData(); // <--- Refresh tabel secara otomatis!
+            }
+        } catch (error) {
+            message.error("Gagal menyimpan data sampling.");
+            console.error(error);
+        } finally {
+            setLoadingForm(false);
+        }
+    };
     return (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
 
@@ -206,32 +262,34 @@ const Analysis = () => {
                     <Col xs={24} lg={6}>
                         <div style={{ background: '#fafafa', padding: '16px', borderRadius: '8px', border: '1px solid #f0f0f0' }}>
                             <Title level={5} style={{ marginBottom: '16px', fontSize: '14px' }}>INPUT SAMPLING MINGGUAN</Title>
-                            <Form layout="vertical">
+                            <Form form={form} layout="vertical" onFinish={onFinishSampling} initialValues={{ minggu: '5', kolam: 'Perlakuan (A)', beratAwal: 152.6 }}>
                                 <Row gutter={12}>
                                     <Col span={12}>
-                                        <Form.Item label="Minggu ke-">
-                                            <Select defaultValue="5"><Option value="5">5</Option></Select>
+                                        <Form.Item name="minggu" label="Minggu ke-">
+                                            <Select><Option value="1">1</Option><Option value="2">2</Option><Option value="3">3</Option><Option value="4">4</Option><Option value="5">5</Option></Select>
                                         </Form.Item>
                                     </Col>
                                     <Col span={12}>
-                                        <Form.Item label="Kolam">
-                                            <Select defaultValue="a"><Option value="a">Perlakuan (A)</Option></Select>
+                                        <Form.Item name="kolam" label="Kolam">
+                                            <Select>
+                                                <Option value="Perlakuan (A)">Perlakuan (A)</Option>
+                                                <Option value="Kontrol (Timer)">Kontrol (Timer)</Option>
+                                            </Select>
                                         </Form.Item>
                                     </Col>
                                 </Row>
-                                <Form.Item label="Berat Awal (gram)">
-                                    <InputNumber style={{ width: '100%' }} defaultValue={152.6} disabled />
+                                <Form.Item name="beratAwal" label="Berat Awal (gram)">
+                                    <InputNumber style={{ width: '100%' }} disabled />
                                 </Form.Item>
-                                <Form.Item label="Berat Akhir (gram)" tooltip="Rata-rata dari 20 ekor ikan sampling">
-                                    <InputNumber style={{ width: '100%' }} defaultValue={215.8} />
+                                <Form.Item name="beratAkhir" label="Berat Akhir (gram)" tooltip="Total biomassa ikan saat ini" rules={[{ required: true, message: 'Masukkan berat akhir' }]}>
+                                    <InputNumber style={{ width: '100%' }} />
                                 </Form.Item>
-                                <Form.Item label="Jumlah Pakan (gram)" tooltip="Akumulasi pakan sejak awal siklus">
-                                    <InputNumber style={{ width: '100%' }} defaultValue={5400} />
+                                <Form.Item name="jumlahPakan" label="Jumlah Pakan (gram)" tooltip="Akumulasi pakan sejak awal siklus" rules={[{ required: true, message: 'Masukkan akumulasi pakan' }]}>
+                                    <InputNumber style={{ width: '100%' }} />
                                 </Form.Item>
-                                <Button type="primary" icon={<SaveOutlined />} block>Simpan Data</Button>
-                                <div style={{ textAlign: 'center', marginTop: '8px' }}>
-                                    <Text type="success" style={{ fontSize: '11px' }}><CheckCircleOutlined /> Data tersimpan ke database</Text>
-                                </div>
+                                <Button type="primary" htmlType="submit" icon={<SaveOutlined />} block loading={loadingForm}>
+                                    Simpan Data
+                                </Button>
                             </Form>
                         </div>
                     </Col>
@@ -239,7 +297,8 @@ const Analysis = () => {
                     <Col xs={24} lg={14}>
                         <Table
                             columns={fcrColumns}
-                            dataSource={fcrData}
+                            dataSource={fcrTableData}
+                            loading={loadingTable}
                             pagination={false}
                             size="small"
                             bordered
