@@ -1,0 +1,14 @@
+# Created by venv; see https://docs.python.org/3/library/venv.html
+.gitignore
+# Environments
+.env
+venv/
+env/
+
+# Database (Agar data skripsi tidak ter-publish)
+*.db
+smartfeeder.db
+
+# Python Caches
+__pycache__/
+*.pyc
