@@ -31,6 +31,14 @@ const MainLayout = () => {
                 collapsed={collapsed}
                 onCollapse={(value) => setCollapsed(value)}
                 theme="light"
+                style={{
+                    overflow: 'auto',
+                    height: '100vh',
+                    position: 'sticky',
+                    insetInlineStart: 0,
+                    top: 0,
+                    bottom: 0,
+                }}
             >
                 <div style={{ padding: '20px', textAlign: 'center' }}>
                     <Title level={4} style={{ color: '#1890ff', margin: 0 }}>
@@ -43,14 +51,14 @@ const MainLayout = () => {
                     items={menuItems}
                     onClick={({ key }) => navigate(key)}
                 />
-                <div style={{ position: 'absolute', bottom: 20, width: '100%' }}>
+                <div style={{ position: 'absolute', bottom: 60, width: '100%' }}>
                     <Menu mode="inline" items={[{ key: 'logout', icon: <LogoutOutlined />, label: 'Logout' }]} />
                 </div>
             </Sider>
 
             <Layout className="site-layout">
-                <Header style={{ background: '#fff', padding: '0 24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <div>
+                <Header style={{ position: 'sticky', top: 0, zIndex: 10, width: '100%', background: '#fff', padding: '0 24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', lineHeight: 1.4 }}>
                         <Title level={5} style={{ margin: 0 }}>AQUACULTURE DASHBOARD</Title>
                         <Text type="secondary" style={{ fontSize: '12px' }}>Sistem Automated Decision Making Berbasis Fuzzy Sugeno</Text>
                     </div>
