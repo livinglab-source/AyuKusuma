@@ -1,0 +1,11 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Sesuai Tahap 6 & Tahap 9 Checklist:
+    // Menolak semua akses klien langsung (Web Client SDK, Mobile SDK, direct REST tanpa Firebase Admin).
+    // Seluruh operasi pembacaan dan penulisan wajib melalui FastAPI Backend yang terotentikasi via Firebase Admin SDK.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

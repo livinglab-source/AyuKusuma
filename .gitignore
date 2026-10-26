@@ -1,14 +1,36 @@
-# Created by venv; see https://docs.python.org/3/library/venv.html
-
-# Environments
+# Environments & Virtual Environments
 .env
+.env.local
+.env.*.local
 venv/
 env/
+ENV/
+.venv/
 
-# Database (Agar data skripsi tidak ter-publish)
+# Firebase & Security Credentials (SANGAT PENTING: Jangan sampai bocor ke GitHub)
+secrets/
+*serviceAccountKey*.json
+serviceAccountKey.json
+
+# Database & SQLite Archives (Data penelitian lokal)
 *.db
+*.sqlite3
 smartfeeder.db
+archive_sqlite/
 
-# Python Caches
+# Backup & Scratch Files
+*.bak
+scratch/
+
+# IDE & Editor Settings
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+
+# Python Caches & Bytecode
 __pycache__/
-*.pyc
+*.py[cod]
+*$py.class
+*.log
+.pytest_cache/
