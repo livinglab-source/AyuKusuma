@@ -34,3 +34,7 @@ __pycache__/
 *$py.class
 *.log
 .pytest_cache/
+
+#File test
+test_firebase.py
+test_system_checklist.py
