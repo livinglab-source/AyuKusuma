@@ -66,9 +66,22 @@ def list_feeding_logs(limit: int = 100) -> list:
     return results
 
 
+def _resolve_timestamp(ts_input: str = None) -> datetime:
+    """Mengonversi string timestamp ISO/RFC jika ada, atau menggunakan UTC saat ini"""
+    if ts_input:
+        try:
+            parsed = datetime.fromisoformat(ts_input)
+            if parsed.tzinfo is None:
+                parsed = parsed.replace(tzinfo=timezone.utc)
+            return parsed
+        except Exception:
+            pass
+    return datetime.now(timezone.utc)
+
+
 def save_feeding_log(data: FeedingLog, caller: dict) -> str:
     """Menyimpan feeding log dari Admin Dashboard maupun ESP32. Mengembalikan event_id."""
-    now = datetime.now(timezone.utc)
+    ts_record = _resolve_timestamp(data.timestamp)
     event_id = _new_event_id(data.event_id)
 
     is_admin = caller.get("role") == "admin"
@@ -87,7 +100,7 @@ def save_feeding_log(data: FeedingLog, caller: dict) -> str:
             "do": float(data.do),
             "ph": float(data.ph),
             "tds": float(data.tds),
-            "timestamp": now,
+            "timestamp": ts_record,
             "source": source,
             "recorded_by": recorded_by
         })
@@ -99,7 +112,7 @@ def save_feeding_log(data: FeedingLog, caller: dict) -> str:
 
 def save_device_feeding_log(data: DeviceFeedingLogInput) -> str:
     """Menyimpan feeding log dari ESP32 terautentikasi. Mengembalikan event_id."""
-    now = datetime.now(timezone.utc)
+    ts_record = _resolve_timestamp(data.timestamp)
     event_id = _new_event_id(data.event_id)
 
     try:
@@ -114,7 +127,7 @@ def save_device_feeding_log(data: DeviceFeedingLogInput) -> str:
             "do": float(data.do),
             "ph": float(data.ph),
             "tds": float(data.tds),
-            "timestamp": now,
+            "timestamp": ts_record,
             "source": "esp32"
         })
     except Exception as e:
