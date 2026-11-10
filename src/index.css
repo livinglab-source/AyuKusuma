@@ -1,6 +1,522 @@
+/* ==========================================================================
+   SMART FEEDER AQUACULTURE — ENTERPRISE SAAS & SCIENTIFIC BI DESIGN SYSTEM
+   Principle: Clarity over Decoration, Data over Visual Noise, Decision over Overload
+   Color Palette: Enterprise Indigo (#eeeeff – #1b1c4b)
+   ========================================================================== */
+
+:root {
+  /* 1. BRAND INDIGO PALETTE (50 – 950) */
+  --brand-50: #eeeeff;
+  --brand-100: #e0e1ff;
+  --brand-200: #c7c8fe;
+  --brand-300: #a5a7fc;
+  --brand-400: #8184f8;
+  --brand-500: #6366f1;
+  --brand-600: #4649e5;
+  --brand-700: #383bca;
+  --brand-800: #3032a3;
+  --brand-900: #2e3081;
+  --brand-950: #1b1c4b;
+
+  /* 2. SURFACE & BORDER TOKENS */
+  --bg-canvas: #f8f9fe;
+  --bg-surface: #ffffff;
+  --bg-subtle: #f3f4fb;
+  --bg-muted: #e5e7f5;
+  --bg-elevated: #ffffff;
+
+  --border-subtle: #e4e6f5;
+  --border-default: #cbd0ea;
+  --border-strong: #8184f8;
+  --border-focus: #4649e5;
+
+  /* 3. TYPOGRAPHY COLORS (WCAG AA/AAA Compliant) */
+  --text-primary: #1b1c4b;
+  --text-secondary: #2e3081;
+  --text-muted: #5b5e8d;
+  --text-disabled: #9ba0c6;
+  --text-inverse: #ffffff;
+
+  /* 4. SCIENTIFIC DATA SERIES & BRAND ACCENTS */
+  --color-adm: #4649e5;          /* Kolam B — Perlakuan (ADM): Indigo 600 */
+  --color-adm-hover: #383bca;    /* Indigo 700 */
+  --color-adm-bg: #eeeeff;       /* Indigo 50 */
+  --color-adm-border: #c7c8fe;   /* Indigo 200 */
+
+  --color-kontrol: #475569;      /* Kolam A — Kontrol (Timer): Scientific Slate */
+  --color-kontrol-chart: #d97706;/* Kontras grafik untuk Kolam A (Amber 600) */
+  --color-kontrol-bg: #f8fafc;
+  --color-kontrol-border: #cbd5e1;
+
+  /* 5. SEMANTIC STATUS INDICATORS */
+  --status-success: #059669;
+  --status-success-bg: #ecfdf5;
+  --status-success-border: #a7f3d0;
+
+  --status-warning: #d97706;
+  --status-warning-bg: #fffbeb;
+  --status-warning-border: #fde68a;
+
+  --status-danger: #dc2626;
+  --status-danger-bg: #fef2f2;
+  --status-danger-border: #fecaca;
+
+  --status-info: #4649e5;
+  --status-info-bg: #eeeeff;
+  --status-info-border: #c7c8fe;
+
+  /* 6. TYPOGRAPHY SCALE */
+  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  --font-mono: 'JetBrains Mono', 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+
+  --text-xs: 0.75rem;      /* 12px */
+  --text-sm: 0.8125rem;    /* 13px */
+  --text-base: 0.875rem;   /* 14px */
+  --text-md: 1rem;         /* 16px */
+  --text-lg: 1.125rem;     /* 18px */
+  --text-xl: 1.375rem;     /* 22px */
+  --text-2xl: 1.75rem;     /* 28px */
+  --text-3xl: 2.125rem;    /* 34px */
+
+  /* 7. SPACING SYSTEM (4px / 8px Grid) */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+  --space-12: 48px;
+
+  /* 8. BORDER RADIUS */
+  --radius-xs: 4px;
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+
+  /* 9. SHADOW TOKENS (Minimalist Enterprise Elevation tinted with Indigo 950) */
+  --shadow-none: none;
+  --shadow-xs: 0 1px 2px 0 rgba(27, 28, 75, 0.04);
+  --shadow-sm: 0 1px 3px 0 rgba(27, 28, 75, 0.06), 0 1px 2px -1px rgba(27, 28, 75, 0.03);
+  --shadow-md: 0 4px 12px -2px rgba(27, 28, 75, 0.08), 0 2px 4px -2px rgba(27, 28, 75, 0.04);
+}
+
+/* ==========================================================================
+   BASE & RESET (PREVENT HORIZONTAL OVERFLOW ON ALL DEVICES)
+   ========================================================================== */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+  overflow-x: clip;
+  width: 100%;
+}
+
 body {
   margin: 0;
   padding: 0;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-  background-color: #f0f2f5;
+  width: 100%;
+  overflow-x: clip;
+  font-family: var(--font-sans);
+  font-size: var(--text-base);
+  line-height: 1.5;
+  background-color: var(--bg-canvas);
+  color: var(--text-primary);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+#root {
+  min-height: 100vh;
+  width: 100%;
+  overflow-x: clip;
+}
+
+/* Tabular Numerals for Scientific Precision */
+.sf-mono,
+.sf-metric-value,
+.ant-statistic-content-value,
+.ant-table-cell {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Custom Subtle Scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: var(--bg-subtle);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--brand-200);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--brand-400);
+}
+
+/* ==========================================================================
+   ENTERPRISE COMPONENT STYLES (CARDS, BUTTONS, INPUTS, TABLES, MODALS)
+   ========================================================================== */
+
+/* Card System */
+.sf-card,
+.ant-card {
+  background: var(--bg-surface) !important;
+  border: 1px solid var(--border-subtle) !important;
+  border-radius: var(--radius-lg) !important;
+  box-shadow: var(--shadow-xs) !important;
+}
+
+.ant-card-head {
+  border-bottom: 1px solid var(--border-subtle) !important;
+  padding: 0 var(--space-5) !important;
+  min-height: 48px !important;
+}
+
+.ant-card-head-title {
+  font-size: var(--text-base) !important;
+  font-weight: 600 !important;
+  color: var(--text-primary) !important;
+  letter-spacing: -0.01em;
+}
+
+.ant-card-type-inner .ant-card-head {
+  background: var(--brand-50) !important;
+}
+
+/* Metric / KPI Card Structure */
+.sf-metric-card {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  padding: var(--space-5);
+  box-shadow: var(--shadow-xs);
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.sf-metric-card:hover {
+  border-color: var(--brand-200);
+  box-shadow: var(--shadow-sm);
+}
+
+.sf-metric-label {
+  font-size: var(--text-xs);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+}
+
+.sf-metric-value {
+  font-size: var(--text-2xl);
+  font-weight: 700;
+  color: var(--text-primary);
+  line-height: 1.2;
+  letter-spacing: -0.02em;
+}
+
+.sf-metric-unit {
+  font-size: var(--text-sm);
+  font-weight: 500;
+  color: var(--text-muted);
+  margin-left: var(--space-1);
+}
+
+/* Section Header Pattern */
+.sf-page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+  padding-bottom: var(--space-4);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.sf-section-label {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--brand-600);
+  margin-bottom: var(--space-1);
+}
+
+/* Status Pill / Badge System */
+.sf-status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 9999px;
+  font-size: var(--text-xs);
+  font-weight: 600;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.sf-status-pill--live {
+  background: var(--status-success-bg);
+  color: var(--status-success);
+  border: 1px solid var(--status-success-border);
+}
+
+.sf-status-pill--stale {
+  background: var(--status-warning-bg);
+  color: var(--status-warning);
+  border: 1px solid var(--status-warning-border);
+}
+
+.sf-status-pill--offline {
+  background: var(--status-danger-bg);
+  color: var(--status-danger);
+  border: 1px solid var(--status-danger-border);
+}
+
+.sf-status-pill--neutral {
+  background: var(--brand-50);
+  color: var(--brand-700);
+  border: 1px solid var(--brand-200);
+}
+
+.sf-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  display: inline-block;
+  flex-shrink: 0;
+}
+
+.sf-dot--live {
+  background-color: var(--status-success);
+}
+
+.sf-dot--stale {
+  background-color: var(--status-warning);
+}
+
+.sf-dot--offline {
+  background-color: var(--status-danger);
+}
+
+/* High-Contrast Membership Parameter Pills (WCAG AAA Compliant) */
+.sf-membership-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  border-radius: var(--radius-md);
+  font-size: var(--text-xs);
+  line-height: 1.3;
+  font-weight: 600;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.sf-membership-pill--normal {
+  background-color: #ecfdf5;
+  border: 1px solid #6ee7b7;
+  color: #065f46;
+}
+
+.sf-membership-pill--warning {
+  background-color: #fffbeb;
+  border: 1px solid #fcd34d;
+  color: #92400e;
+}
+
+.sf-membership-pill--neutral {
+  background-color: var(--bg-subtle);
+  border: 1px solid var(--border-default);
+  color: var(--text-primary);
+}
+
+/* Floating Stale Data Notification Card */
+@keyframes sfFloatIn {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.sf-floating-notification {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  z-index: 1050;
+  width: 400px;
+  max-width: calc(100vw - 32px);
+  background: #ffffff;
+  border: 1px solid #fcd34d;
+  border-left: 4px solid #d97706;
+  border-radius: var(--radius-lg);
+  box-shadow: 0 12px 28px -4px rgba(27, 28, 75, 0.16), 0 4px 10px -2px rgba(27, 28, 75, 0.08);
+  padding: 14px 16px;
+  animation: sfFloatIn 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@media (max-width: 575px) {
+  .sf-floating-notification {
+    bottom: 16px;
+    right: 16px;
+    left: 16px;
+    width: auto;
+  }
+}
+
+/* Sidebar Menu Indigo Styling */
+.ant-menu-light .ant-menu-item-selected {
+  background-color: var(--brand-50) !important;
+  color: var(--brand-600) !important;
+  font-weight: 600 !important;
+}
+
+.ant-menu-light .ant-menu-item:hover:not(.ant-menu-item-selected) {
+  background-color: var(--bg-subtle) !important;
+  color: var(--brand-700) !important;
+}
+
+/* Button & Input Ergonomics */
+.ant-btn {
+  border-radius: var(--radius-md) !important;
+  font-weight: 500 !important;
+  min-height: 36px;
+  box-shadow: none !important;
+}
+
+.ant-btn-primary {
+  background-color: var(--brand-600) !important;
+  border-color: var(--brand-600) !important;
+}
+
+.ant-btn-primary:hover:not(:disabled) {
+  background-color: var(--brand-700) !important;
+  border-color: var(--brand-700) !important;
+}
+
+.ant-btn-lg {
+  min-height: 42px;
+}
+
+.ant-input,
+.ant-input-affix-wrapper,
+.ant-input-number,
+.ant-picker,
+.ant-select-selector {
+  border-radius: var(--radius-md) !important;
+}
+
+.ant-form-item-label > label {
+  font-size: var(--text-xs) !important;
+  font-weight: 600 !important;
+  color: var(--text-secondary) !important;
+}
+
+/* Table Enterprise Styling */
+.ant-table-wrapper {
+  width: 100%;
+  overflow-x: auto;
+}
+
+.ant-table-thead > tr > th {
+  background: var(--brand-50) !important;
+  color: var(--brand-900) !important;
+  font-size: var(--text-xs) !important;
+  font-weight: 600 !important;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  border-bottom: 1px solid var(--brand-200) !important;
+  padding: 10px 12px !important;
+}
+
+.ant-table-tbody > tr > td {
+  font-size: var(--text-sm) !important;
+  color: var(--text-primary) !important;
+  padding: 10px 12px !important;
+  border-bottom: 1px solid var(--border-subtle) !important;
+}
+
+.ant-table-tbody > tr:hover > td {
+  background: var(--bg-subtle) !important;
+}
+
+/* Chart Container Safety (Prevent Clipping) */
+.sf-chart-box {
+  width: 100%;
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: var(--space-3) var(--space-4) var(--space-2);
+  background: var(--bg-surface);
+}
+
+/* Modal & Dialog Styles */
+.ant-modal-content {
+  border-radius: var(--radius-lg) !important;
+  border: 1px solid var(--border-subtle) !important;
+  box-shadow: var(--shadow-md) !important;
+}
+
+/* ==========================================================================
+   RESPONSIVE GRIDS & BREAKPOINTS (DESKTOP, LAPTOP, TABLET, SMARTPHONE)
+   ========================================================================== */
+
+/* 5-Column Sensor Telemetry Grid */
+.sensor-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: var(--space-4);
+  width: 100%;
+}
+
+.sensor-grid > * {
+  min-width: 0;
+}
+
+/* Laptop (< 1280px): 3 columns */
+@media (max-width: 1279px) {
+  .sensor-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+/* Tablet (< 992px): 2 columns */
+@media (max-width: 991px) {
+  .sensor-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .sensor-grid > :last-child {
+    grid-column: 1 / -1;
+  }
+}
+
+/* Smartphone (< 576px): 1 column without overflow */
+@media (max-width: 575px) {
+  .sensor-grid {
+    grid-template-columns: 1fr;
+    gap: var(--space-3);
+  }
+  .sf-metric-value {
+    font-size: var(--text-xl);
+  }
+  .ant-card-body {
+    padding: var(--space-4) !important;
+  }
 }

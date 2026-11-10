@@ -1,89 +1,168 @@
-import React, { useState, useEffect } from 'react';
-import { Card, Row, Col, Typography, Form, InputNumber, Button, message, Statistic, Divider, Alert } from 'antd';
-import { SaveOutlined, ThunderboltOutlined, SettingOutlined } from '@ant-design/icons';
-import api from '../api';
+import { useState, useEffect, useCallback } from 'react';
+import { Card, Row, Col, Typography, Form, InputNumber, Button, message, Statistic, Divider, Alert, Tag, Space } from 'antd';
+import { SaveOutlined, ThunderboltOutlined, CloudSyncOutlined, ReloadOutlined } from '@ant-design/icons';
+import api, { getCachedData } from '../api';
+import { formatDateTimeWita } from '../utils/time';
+import { ErrorState, confirmAction } from '../components/SystemStates';
 
-const { Title, Text } = Typography;
+const { Text } = Typography;
 
 const Settings = () => {
     const [form] = Form.useForm();
     const [loading, setLoading] = useState(false);
-    const [rawVoltage, setRawVoltage] = useState({ v_ph: 0.0, v_tds: 0.0 });
+    const [fetchError, setFetchError] = useState(null);
 
-    const fetchRawSensors = async () => {
+    const cachedAdm = getCachedData('/api/dashboard/adm')?.data || getCachedData('/api/dashboard/adm') || {};
+    const [rawVoltage, setRawVoltage] = useState({
+        v_ph: cachedAdm.v_ph || 0.0,
+        v_tds: cachedAdm.v_tds || 0.0,
+        suhu: cachedAdm.suhu || 0.0,
+        ph: cachedAdm.ph || 0.0,
+        tds: cachedAdm.tds || 0,
+    });
+    const [updatedAt, setUpdatedAt] = useState(() => getCachedData('/api/calibration')?.updated_at || null);
+
+    const fetchRawSensors = useCallback(async () => {
         try {
-            const response = await api.get('/api/sensor/latest/adm');
-            if (response.data.status === 'success') {
+            const response = await api.get('/api/dashboard/adm');
+            if (response.data?.status === 'success') {
+                const d = response.data.data || response.data;
                 setRawVoltage({
-                    v_ph: response.data.data.v_ph || 0.0,
-                    v_tds: response.data.data.v_tds || 0.0,
+                    v_ph: d.v_ph || 0.0,
+                    v_tds: d.v_tds || 0.0,
+                    suhu: d.suhu || 0.0,
+                    ph: d.ph || 0.0,
+                    tds: d.tds || 0,
                 });
             }
-        } catch (error) {
-            // Abaikan error di console agar tidak berisik saat polling
+        } catch {
+            // Abaikan error polling latar belakang
         }
-    };
-
-    const fetchCalibration = async () => {
-        try {
-            const response = await api.get('/api/calibration');
-            form.setFieldsValue(response.data);
-        } catch (error) {
-            console.error("Gagal menarik data kalibrasi");
-        }
-    };
-
-    useEffect(() => {
-        fetchCalibration();
-        fetchRawSensors();
-        const interval = setInterval(fetchRawSensors, 5000);
-        return () => clearInterval(interval);
     }, []);
 
-    const onFinish = async (values) => {
+    const fetchCalibration = useCallback(
+        async (forceRefresh = false) => {
+            setFetchError(null);
+            try {
+                const response = await api.get('/api/calibration', { forceRefresh });
+                if (response.data) {
+                    form.setFieldsValue({
+                        offset_suhu: response.data.offset_suhu,
+                        ph_401: response.data.ph_401,
+                        ph_686: response.data.ph_686,
+                        ph_918: response.data.ph_918,
+                        tds_k: response.data.tds_k,
+                        feeder_g_per_s: response.data.feeder_g_per_s ?? 15.0,
+                        jam_pakan_1: response.data.jam_pakan_1 ?? 9,
+                        menit_pakan_1: response.data.menit_pakan_1 ?? 0,
+                        jam_pakan_2: response.data.jam_pakan_2 ?? 16,
+                        menit_pakan_2: response.data.menit_pakan_2 ?? 0,
+                    });
+                    if (response.data.updated_at) {
+                        setUpdatedAt(response.data.updated_at);
+                    }
+                }
+            } catch {
+                setFetchError('Gagal menarik parameter kalibrasi dari Cloud Firestore.');
+            }
+        },
+        [form]
+    );
+
+    useEffect(() => {
+        const initTimer = setTimeout(() => {
+            fetchCalibration(false);
+            fetchRawSensors();
+        }, 0);
+        const interval = setInterval(fetchRawSensors, 5000);
+        return () => {
+            clearTimeout(initTimer);
+            clearInterval(interval);
+        };
+    }, [fetchCalibration, fetchRawSensors]);
+
+    const saveCalibration = async (values) => {
         setLoading(true);
         try {
-            await api.post('/api/calibration', values);
-            message.success('Data kalibrasi berhasil disimpan! ESP32 akan langsung menggunakan nilai baru.');
+            const res = await api.post('/api/calibration', values);
+            message.success(res.data?.message || 'Parameter kalibrasi berhasil disimpan ke Cloud Firestore.');
+            await fetchCalibration(true);
         } catch (error) {
-            message.error('Gagal menyimpan kalibrasi.');
+            const errDetail = error.response?.data?.detail || 'Gagal menyimpan kalibrasi. Pastikan sesi admin aktif.';
+            message.error(errDetail);
         } finally {
             setLoading(false);
         }
     };
 
+    const onFinish = (values) => {
+        confirmAction({
+            title: 'Simpan Perubahan Kalibrasi & Jadwal?',
+            content: 'Nilai kalibrasi sensor, laju lontaran servo, dan jadwal pakan baru akan langsung diterapkan pada Cloud Firestore serta perangkat ESP32.',
+            okText: 'Simpan Konfigurasi',
+            onConfirm: () => saveCalibration(values),
+        });
+    };
+
     return (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-            <Title level={3}>Pengaturan & Kalibrasi Sistem</Title>
-            <Alert
-                message="Informasi Kalibrasi"
-                description="Nilai tegangan mentah akan otomatis ter-update setiap 5 detik saat ESP32 aktif dan terhubung ke server."
-                type="info" showIcon
-                style={{ marginBottom: '8px' }}
-            />
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-5)' }}>
+            {fetchError && (
+                <ErrorState
+                    title="Sinkronisasi Kalibrasi Gagal"
+                    description={fetchError}
+                    onRetry={() => fetchCalibration(true)}
+                />
+            )}
+
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
+                <Alert
+                    message="Sinkronisasi Tegangan Mentah Real-Time"
+                    description="Nilai tegangan mentah (Raw Voltage) sensor diperbarui setiap 5 detik dari telemetri ESP32. Perubahan parameter langsung aktif di Cloud Firestore (settings/calibration)."
+                    type="info"
+                    showIcon
+                    style={{ flex: 1, minWidth: 280 }}
+                />
+                <Space size="small" wrap>
+                    {updatedAt && (
+                        <Tag icon={<CloudSyncOutlined />} color="blue" style={{ margin: 0, padding: '4px 10px' }}>
+                            Tersinkron: <span className="sf-mono">{formatDateTimeWita(updatedAt)}</span>
+                        </Tag>
+                    )}
+                    <Button size="small" icon={<ReloadOutlined />} onClick={() => fetchCalibration(true)}>
+                        Muat Ulang
+                    </Button>
+                </Space>
+            </div>
 
             <Form form={form} layout="vertical" onFinish={onFinish}>
                 <Row gutter={[16, 16]}>
-
                     {/* PANEL pH */}
                     <Col xs={24} md={12}>
-                        <Card title="Kalibrasi Sensor pH" bordered={false} style={{ height: '100%', borderRadius: '12px' }}>
-                            <Statistic title="Tegangan Mentah Saat Ini" value={rawVoltage.v_ph} precision={4} suffix="V" prefix={<ThunderboltOutlined style={{ color: '#f59e0b' }} />} />
-                            <Divider />
-                            <Text type="secondary">Celupkan probe ke cairan buffer, tunggu hingga tegangan stabil, lalu catat angka tersebut ke kolom di bawah.</Text>
-                            <Row gutter={16} style={{ marginTop: 16 }}>
-                                <Col span={8}>
-                                    <Form.Item name="ph_401" label="Buffer 4.01">
+                        <Card title="1. Kalibrasi Sensor pH (3-Point Buffer)" style={{ height: '100%' }}>
+                            <Statistic
+                                title="Tegangan Mentah Saat Ini (v_ph)"
+                                value={rawVoltage.v_ph}
+                                precision={4}
+                                suffix="V"
+                                prefix={<ThunderboltOutlined style={{ color: 'var(--status-warning)' }} />}
+                            />
+                            <Divider style={{ margin: '14px 0' }} />
+                            <Text type="secondary" style={{ fontSize: 12, display: 'block', marginBottom: 14 }}>
+                                Celupkan probe ke larutan buffer standar, tunggu tegangan stabil, lalu masukkan nilai tegangan pada masing-masing titik buffer.
+                            </Text>
+                            <Row gutter={12}>
+                                <Col xs={24} sm={8}>
+                                    <Form.Item name="ph_401" label="Buffer pH 4.01 (V)">
                                         <InputNumber style={{ width: '100%' }} step="0.0001" />
                                     </Form.Item>
                                 </Col>
-                                <Col span={8}>
-                                    <Form.Item name="ph_686" label="Buffer 6.86">
+                                <Col xs={24} sm={8}>
+                                    <Form.Item name="ph_686" label="Buffer pH 6.86 (V)">
                                         <InputNumber style={{ width: '100%' }} step="0.0001" />
                                     </Form.Item>
                                 </Col>
-                                <Col span={8}>
-                                    <Form.Item name="ph_918" label="Buffer 9.18">
+                                <Col xs={24} sm={8}>
+                                    <Form.Item name="ph_918" label="Buffer pH 9.18 (V)">
                                         <InputNumber style={{ width: '100%' }} step="0.0001" />
                                     </Form.Item>
                                 </Col>
@@ -93,11 +172,19 @@ const Settings = () => {
 
                     {/* PANEL TDS */}
                     <Col xs={24} md={12}>
-                        <Card title="Kalibrasi Sensor TDS" bordered={false} style={{ height: '100%', borderRadius: '12px' }}>
-                            <Statistic title="Tegangan Mentah Saat Ini" value={rawVoltage.v_tds} precision={4} suffix="V" prefix={<ThunderboltOutlined style={{ color: '#f59e0b' }} />} />
-                            <Divider />
-                            <Text type="secondary">Bandingkan nilai ppm yang tampil di Dashboard dengan TDS Meter pabrikan, lalu ubah rasio K-Value.</Text>
-                            <Form.Item name="tds_k" label="K-Value (Faktor Pengali)" style={{ marginTop: 16 }}>
+                        <Card title="2. Kalibrasi Sensor TDS" style={{ height: '100%' }}>
+                            <Statistic
+                                title="Tegangan Mentah Saat Ini (v_tds)"
+                                value={rawVoltage.v_tds}
+                                precision={4}
+                                suffix="V"
+                                prefix={<ThunderboltOutlined style={{ color: 'var(--status-warning)' }} />}
+                            />
+                            <Divider style={{ margin: '14px 0' }} />
+                            <Text type="secondary" style={{ fontSize: 12, display: 'block', marginBottom: 14 }}>
+                                Bandingkan pembacaan ppm di Dashboard dengan TDS meter acuan, lalu sesuaikan faktor pengali K-Value.
+                            </Text>
+                            <Form.Item name="tds_k" label="K-Value (Faktor Pengali)">
                                 <InputNumber style={{ width: '100%' }} step="0.01" />
                             </Form.Item>
                         </Card>
@@ -105,30 +192,81 @@ const Settings = () => {
 
                     {/* PANEL SUHU */}
                     <Col xs={24} md={12}>
-                        <Card title="Kalibrasi Sensor Suhu (DS18B20)" bordered={false} style={{ height: '100%', borderRadius: '12px' }}>
-                            <Text type="secondary">Gunakan nilai Offset untuk menyeimbangkan pembacaan suhu ESP32 dengan termometer raksa acuan.</Text>
-                            <Form.Item name="offset_suhu" label="Offset Suhu (°C)" style={{ marginTop: 16 }}>
-                                <InputNumber style={{ width: '100%' }} step="0.1" />
+                        <Card title="3. Kalibrasi Sensor Suhu (DS18B20)" style={{ height: '100%' }}>
+                            <Text type="secondary" style={{ fontSize: 12, display: 'block', marginBottom: 14 }}>
+                                Gunakan nilai Offset Suhu untuk mengoreksi selisih pembacaan suhu terhadap termometer standar laboratorium.
+                            </Text>
+                            <Form.Item name="offset_suhu" label="Offset Koreksi Suhu (°C)">
+                                <InputNumber style={{ width: '100%' }} step="0.1" addonAfter="°C" />
                             </Form.Item>
                         </Card>
                     </Col>
 
                     {/* PANEL SERVO FEEDER */}
                     <Col xs={24} md={12}>
-                        <Card title="Kalibrasi Servo Feeder" bordered={false} style={{ height: '100%', borderRadius: '12px' }}>
-                            <Text type="secondary">Tentukan berapa gram pakan yang berhasil dijatuhkan oleh aktuator servo dalam waktu 1 detik bukaan.</Text>
-                            <Form.Item name="feeder_g_per_s" label="Kapasitas Keluar (Gram/Detik)" style={{ marginTop: 16 }}>
-                                <InputNumber style={{ width: '100%' }} step="0.1" addonAfter="gram / dtk" />
+                        <Card title="4. Kalibrasi Laju Lontaran Servo Feeder" style={{ height: '100%' }}>
+                            <Text type="secondary" style={{ fontSize: 12, display: 'block', marginBottom: 14 }}>
+                                Tentukan berat pakan (gram) yang berhasil dikeluarkan oleh katup mekanisme servo per 1 detik bukaan penuh.
+                            </Text>
+                            <Form.Item name="feeder_g_per_s" label="Kapasitas Bukaan (Gram / Detik)">
+                                <InputNumber style={{ width: '100%' }} min={0.1} step="0.1" addonAfter="g / dtk" />
                             </Form.Item>
                         </Card>
                     </Col>
 
+                    {/* PANEL JADWAL PAKAN OTOMATIS */}
+                    <Col xs={24}>
+                        <Card title="5. Jadwal Pemberian Pakan Otomatis Harian (Zona Waktu WITA)">
+                            <Text type="secondary" style={{ fontSize: 12, display: 'block', marginBottom: 16 }}>
+                                Atur waktu eksekusi pemberian pakan terjadwal untuk Sesi 1 (Pagi) dan Sesi 2 (Sore) dalam Waktu Indonesia Tengah (WITA).
+                            </Text>
+                            <Row gutter={[24, 16]}>
+                                <Col xs={24} md={12}>
+                                    <div style={{ padding: 14, background: 'var(--bg-subtle)', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-subtle)' }}>
+                                        <Text strong style={{ display: 'block', marginBottom: 10, color: 'var(--color-adm)' }}>
+                                            Sesi 1 — Jadwal Pagi
+                                        </Text>
+                                        <Row gutter={12}>
+                                            <Col span={12}>
+                                                <Form.Item name="jam_pakan_1" label="Jam (0–23)" style={{ marginBottom: 0 }}>
+                                                    <InputNumber min={0} max={23} style={{ width: '100%' }} />
+                                                </Form.Item>
+                                            </Col>
+                                            <Col span={12}>
+                                                <Form.Item name="menit_pakan_1" label="Menit (0–59)" style={{ marginBottom: 0 }}>
+                                                    <InputNumber min={0} max={59} style={{ width: '100%' }} />
+                                                </Form.Item>
+                                            </Col>
+                                        </Row>
+                                    </div>
+                                </Col>
+                                <Col xs={24} md={12}>
+                                    <div style={{ padding: 14, background: 'var(--bg-subtle)', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-subtle)' }}>
+                                        <Text strong style={{ display: 'block', marginBottom: 10, color: 'var(--text-secondary)' }}>
+                                            Sesi 2 — Jadwal Sore
+                                        </Text>
+                                        <Row gutter={12}>
+                                            <Col span={12}>
+                                                <Form.Item name="jam_pakan_2" label="Jam (0–23)" style={{ marginBottom: 0 }}>
+                                                    <InputNumber min={0} max={23} style={{ width: '100%' }} />
+                                                </Form.Item>
+                                            </Col>
+                                            <Col span={12}>
+                                                <Form.Item name="menit_pakan_2" label="Menit (0–59)" style={{ marginBottom: 0 }}>
+                                                    <InputNumber min={0} max={59} style={{ width: '100%' }} />
+                                                </Form.Item>
+                                            </Col>
+                                        </Row>
+                                    </div>
+                                </Col>
+                            </Row>
+                        </Card>
+                    </Col>
                 </Row>
 
-                {/* TOMBOL SIMPAN UTAMA */}
-                <div style={{ marginTop: '24px' }}>
-                    <Button type="primary" htmlType="submit" icon={<SaveOutlined />} loading={loading} block size="large" style={{ borderRadius: '8px' }}>
-                        SIMPAN SEMUA PARAMETER KALIBRASI
+                <div style={{ marginTop: 20, display: 'flex', justifyContent: 'flex-end' }}>
+                    <Button type="primary" htmlType="submit" icon={<SaveOutlined />} loading={loading} size="large">
+                        Simpan Parameter Kalibrasi & Jadwal
                     </Button>
                 </div>
             </Form>
