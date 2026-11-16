@@ -1,7 +1,18 @@
 // File: src/api.js
 import axios from 'axios';
+import { applyFeedingLogOverrides } from './utils/feedingLogStorage';
 
 export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000';
+
+const transformPayloadIfNeeded = (url, payload) => {
+    if (url && url.includes('/api/feeding-log') && payload && Array.isArray(payload.data)) {
+        return {
+            ...payload,
+            data: applyFeedingLogOverrides(payload.data),
+        };
+    }
+    return payload;
+};
 
 const CACHE_PREFIX = 'sf_cache_v1:';
 const memoryCache = new Map();
@@ -46,7 +57,7 @@ export const getCacheMeta = (url) => {
  */
 export const getCachedData = (url) => {
     const meta = getCacheMeta(url);
-    return meta ? meta.data : null;
+    return meta ? transformPayloadIfNeeded(url, meta.data) : null;
 };
 
 /**
@@ -172,7 +183,7 @@ const api = {
 
         // Jika data di cache masih segar (dalam rentang TTL) dan tidak dipaksa refresh, kembalikan instan (0ms)
         if (!forceRefresh && memEntry && Date.now() - memEntry.timestamp < ttl) {
-            return { data: memEntry.data, status: 200, fromCache: true };
+            return { data: transformPayloadIfNeeded(url, memEntry.data), status: 200, fromCache: true };
         }
 
         // Gunakan kembali request yang sedang berjalan untuk URL yang sama (deduplikasi)
@@ -183,6 +194,7 @@ const api = {
                 .then((res) => {
                     if (res?.data) {
                         setCachedData(url, res.data);
+                        return { ...res, data: transformPayloadIfNeeded(url, res.data) };
                     }
                     return res;
                 })
@@ -217,6 +229,7 @@ const api = {
         } else if (url.includes('/api/calibration')) {
             invalidateCache('/api/calibration');
             invalidateCache('/api/dashboard/');
+            invalidateCache('/api/sensor/history/');
         } else if (url.includes('/api/command')) {
             invalidateCache('/api/command/status');
         } else {
@@ -225,8 +238,28 @@ const api = {
         return res;
     },
 
-    put: (...args) => rawAxios.put(...args),
-    delete: (...args) => rawAxios.delete(...args),
+    put: async (url, payload, config = {}) => {
+        const res = await rawAxios.put(url, payload, { timeout: 6000, ...config });
+        if (url.includes('/api/sampling')) {
+            invalidateCache('/api/sampling');
+        } else if (url.includes('/api/feeding-log')) {
+            invalidateCache('/api/feeding-log');
+        } else {
+            invalidateCache();
+        }
+        return res;
+    },
+    delete: async (url, config = {}) => {
+        const res = await rawAxios.delete(url, { timeout: 6000, ...config });
+        if (url.includes('/api/sampling')) {
+            invalidateCache('/api/sampling');
+        } else if (url.includes('/api/feeding-log')) {
+            invalidateCache('/api/feeding-log');
+        } else {
+            invalidateCache();
+        }
+        return res;
+    },
 };
 
 /**
@@ -240,11 +273,12 @@ export const prefetchAppData = () => {
         '/api/sensor/history/kontrol',
         '/api/feeding-log',
         '/api/sampling',
-        '/api/calibration',
+        '/api/calibration/adm',
+        '/api/calibration/kontrol',
     ];
     endpoints.forEach((ep) => {
         if (!getCachedData(ep)) {
-            api.get(ep).catch(() => {});
+            api.get(ep).catch(() => { });
         }
     });
 };

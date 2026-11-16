@@ -475,6 +475,126 @@ body {
 }
 
 /* ==========================================================================
+   HIGH-CONTRAST ENTERPRISE STATUS BANNERS & ALERTS
+   ========================================================================== */
+.sf-status-banner {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: 12px 16px;
+  border-radius: var(--radius-md);
+  font-size: var(--text-sm);
+  line-height: 1.5;
+  transition: all 0.2s ease;
+}
+
+.sf-status-banner-success {
+  background: var(--status-success-bg);
+  border: 1px solid var(--status-success-border);
+  color: #065f46;
+}
+
+.sf-status-banner-success .sf-status-icon {
+  color: #059669;
+  font-size: 16px;
+  flex-shrink: 0;
+}
+
+.sf-status-banner-warning {
+  background: var(--status-warning-bg);
+  border: 1px solid var(--status-warning-border);
+  color: #92400e;
+}
+
+.sf-status-banner-warning .sf-status-icon {
+  color: #d97706;
+  font-size: 16px;
+  flex-shrink: 0;
+}
+
+.sf-status-banner-info {
+  background: var(--status-info-bg);
+  border: 1px solid var(--status-info-border);
+  color: #1e1b4b;
+}
+
+.sf-status-banner-info .sf-status-icon {
+  color: var(--brand-600);
+  font-size: 16px;
+  flex-shrink: 0;
+}
+
+.sf-status-banner-danger {
+  background: var(--status-danger-bg);
+  border: 1px solid var(--status-danger-border);
+  color: #991b1b;
+}
+
+.sf-status-banner-danger .sf-status-icon {
+  color: var(--status-danger);
+  font-size: 16px;
+  flex-shrink: 0;
+}
+
+/* Ant Design Alert Contrast Boost */
+.ant-alert {
+  border-radius: var(--radius-md) !important;
+  font-size: var(--text-sm) !important;
+}
+
+.ant-alert-success {
+  background-color: var(--status-success-bg) !important;
+  border-color: var(--status-success-border) !important;
+}
+.ant-alert-success .ant-alert-message,
+.ant-alert-success .ant-alert-description {
+  color: #065f46 !important;
+  font-weight: 500;
+}
+.ant-alert-success .ant-alert-icon {
+  color: #059669 !important;
+}
+
+.ant-alert-warning {
+  background-color: var(--status-warning-bg) !important;
+  border-color: var(--status-warning-border) !important;
+}
+.ant-alert-warning .ant-alert-message,
+.ant-alert-warning .ant-alert-description {
+  color: #92400e !important;
+  font-weight: 500;
+}
+.ant-alert-warning .ant-alert-icon {
+  color: #d97706 !important;
+}
+
+.ant-alert-info {
+  background-color: var(--status-info-bg) !important;
+  border-color: var(--status-info-border) !important;
+}
+.ant-alert-info .ant-alert-message,
+.ant-alert-info .ant-alert-description {
+  color: #1e1b4b !important;
+  font-weight: 500;
+}
+.ant-alert-info .ant-alert-icon {
+  color: var(--brand-600) !important;
+}
+
+.ant-alert-error {
+  background-color: var(--status-danger-bg) !important;
+  border-color: var(--status-danger-border) !important;
+}
+.ant-alert-error .ant-alert-message,
+.ant-alert-error .ant-alert-description {
+  color: #991b1b !important;
+  font-weight: 500;
+}
+.ant-alert-error .ant-alert-icon {
+  color: var(--status-danger) !important;
+}
+
+/* ==========================================================================
    RESPONSIVE GRIDS & BREAKPOINTS (DESKTOP, LAPTOP, TABLET, SMARTPHONE)
    ========================================================================== */
 

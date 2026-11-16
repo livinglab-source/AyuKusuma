@@ -1,18 +1,22 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
-import { Card, Row, Col, Typography, Select, Button, Table, Tag, message, Modal, Descriptions, Space } from 'antd';
+import { Card, Row, Col, Typography, Select, Button, Table, Tag, message, Modal, Descriptions, Space, Form, InputNumber, DatePicker, Popconfirm } from 'antd';
 import {
     SyncOutlined,
     CheckCircleOutlined,
     CloseCircleOutlined,
     EyeOutlined,
+    EditOutlined,
+    DeleteOutlined,
     FileExcelOutlined,
     FilePdfOutlined,
     FileTextOutlined,
     ExperimentOutlined,
     UnorderedListOutlined,
 } from '@ant-design/icons';
-import api, { getCachedData } from '../api';
+import dayjs from 'dayjs';
+import api, { getCachedData, invalidateCache } from '../api';
 import { TIME_ZONE, parseUtc, formatDateTimeWita, dateKeyWita } from '../utils/time';
+import { getStableLogKey, saveFeedingLogEdit, markFeedingLogDeleted, isControlPondType } from '../utils/feedingLogStorage';
 import { EmptyState, ErrorState } from '../components/SystemStates';
 
 const { Text } = Typography;
@@ -75,7 +79,9 @@ const FeedingLog = () => {
     const [logData, setLogData] = useState(() => getCachedData('/api/feeding-log')?.data || []);
     const [exporting, setExporting] = useState(null);
     const [detailModalOpen, setDetailModalOpen] = useState(false);
+    const [editModalOpen, setEditModalOpen] = useState(false);
     const [selectedRecord, setSelectedRecord] = useState(null);
+    const [editForm] = Form.useForm();
 
     // State filter
     const [period, setPeriod] = useState('today');
@@ -99,6 +105,53 @@ const FeedingLog = () => {
             setFetchError('Gagal menarik data log pakan dari database.');
         }
     }, []);
+
+    const handleOpenEditModal = (record) => {
+        setSelectedRecord(record);
+        const dt = getItemDate(record);
+        editForm.setFieldsValue({
+            tanggal: dt ? dayjs(dt) : dayjs(),
+            pondType: isControlPondType(record?.pondType) ? 'kontrol' : 'adm',
+            jumlahPakan: Number(record?.jumlahPakan) || 0,
+            targetPakan: record?.targetPakan !== undefined && record?.targetPakan !== '—' ? Number(record.targetPakan) : undefined,
+            durasi: record?.durasi !== undefined && record?.durasi !== '—' ? Number(record.durasi) : undefined,
+            status: record?.status === 'Gagal' ? 'Gagal' : 'Berhasil',
+        });
+        setEditModalOpen(true);
+    };
+
+    const handleSaveEdit = async () => {
+        try {
+            const values = await editForm.validateFields();
+            if (!selectedRecord) return;
+            const dateObj = values.tanggal?.toDate ? values.tanggal.toDate() : new Date(values.tanggal);
+            const dateKey = dateKeyWita(dateObj);
+            const pondLabel = values.pondType === 'kontrol' ? 'Kolam A (Kontrol)' : 'Kolam B (Perlakuan - ADM)';
+            saveFeedingLogEdit(selectedRecord, {
+                dateKey,
+                pondType: pondLabel,
+                jumlahPakan: Number(values.jumlahPakan),
+                targetPakan: values.targetPakan !== undefined && values.targetPakan !== null ? Number(values.targetPakan) : undefined,
+                durasi: values.durasi !== undefined && values.durasi !== null ? Number(values.durasi) : undefined,
+                status: values.status || 'Berhasil',
+            });
+            invalidateCache('/api/feeding-log');
+            setEditModalOpen(false);
+            message.success('Log pemberian pakan berhasil diperbarui.');
+            await fetchLogs(false);
+        } catch {
+            // validasi form
+        }
+    };
+
+    const handleDeleteLog = async (record) => {
+        markFeedingLogDeleted(record);
+        invalidateCache('/api/feeding-log');
+        setDetailModalOpen(false);
+        setEditModalOpen(false);
+        message.success('Log pemberian pakan berhasil dihapus.');
+        await fetchLogs(false);
+    };
 
     useEffect(() => {
         const initTimer = setTimeout(() => {
@@ -315,20 +368,46 @@ const FeedingLog = () => {
             ),
         },
         {
-            title: 'Detail',
+            title: 'Aksi',
             key: 'aksi',
             align: 'center',
-            width: 70,
+            width: 110,
             render: (_, record) => (
-                <Button
-                    type="text"
-                    size="small"
-                    icon={<EyeOutlined style={{ color: 'var(--color-adm)' }} />}
-                    onClick={() => {
-                        setSelectedRecord(record);
-                        setDetailModalOpen(true);
-                    }}
-                />
+                <Space size={4}>
+                    <Button
+                        type="text"
+                        size="small"
+                        title="Lihat Detail"
+                        icon={<EyeOutlined style={{ color: 'var(--color-adm)' }} />}
+                        onClick={() => {
+                            setSelectedRecord(record);
+                            setDetailModalOpen(true);
+                        }}
+                    />
+                    <Button
+                        type="text"
+                        size="small"
+                        title="Edit Log Pakan"
+                        icon={<EditOutlined style={{ color: 'var(--color-adm)' }} />}
+                        onClick={() => handleOpenEditModal(record)}
+                    />
+                    <Popconfirm
+                        title="Hapus log pakan ini?"
+                        description="Log yang dihapus tidak akan dihitung dalam grafik dan FCR."
+                        onConfirm={() => handleDeleteLog(record)}
+                        okText="Hapus"
+                        cancelText="Batal"
+                        okButtonProps={{ danger: true }}
+                    >
+                        <Button
+                            type="text"
+                            size="small"
+                            danger
+                            title="Hapus Log Pakan"
+                            icon={<DeleteOutlined />}
+                        />
+                    </Popconfirm>
+                </Space>
             ),
         },
     ];
@@ -447,7 +526,7 @@ const FeedingLog = () => {
                     <Table
                         columns={columns}
                         dataSource={filteredData}
-                        rowKey={(row) => row.id ?? row.key ?? `${row.timestamp}-${row.pondType}`}
+                        rowKey={(row) => getStableLogKey(row)}
                         loading={loading}
                         size="small"
                         pagination={{
@@ -466,6 +545,16 @@ const FeedingLog = () => {
                 open={detailModalOpen}
                 onCancel={() => setDetailModalOpen(false)}
                 footer={[
+                    <Button
+                        key="edit"
+                        icon={<EditOutlined />}
+                        onClick={() => {
+                            setDetailModalOpen(false);
+                            if (selectedRecord) handleOpenEditModal(selectedRecord);
+                        }}
+                    >
+                        Edit Log Ini
+                    </Button>,
                     <Button key="close" type="primary" onClick={() => setDetailModalOpen(false)}>
                         Tutup
                     </Button>,
@@ -513,6 +602,66 @@ const FeedingLog = () => {
                         </Descriptions.Item>
                     </Descriptions>
                 )}
+            </Modal>
+
+            {/* Modal Edit Feeding Log (Kolam B & Kolam A) */}
+            <Modal
+                title="Edit Log Pemberian Pakan"
+                open={editModalOpen}
+                onCancel={() => setEditModalOpen(false)}
+                onOk={handleSaveEdit}
+                okText="Simpan Perubahan"
+                cancelText="Batal"
+                centered
+            >
+                <Form form={editForm} layout="vertical" style={{ marginTop: 12 }}>
+                    <Row gutter={12}>
+                        <Col span={12}>
+                            <Form.Item name="tanggal" label="Tanggal Pemberian" rules={[{ required: true, message: 'Pilih tanggal' }]}>
+                                <DatePicker style={{ width: '100%' }} format="DD/MM/YYYY" allowClear={false} />
+                            </Form.Item>
+                        </Col>
+                        <Col span={12}>
+                            <Form.Item name="pondType" label="Kolam" rules={[{ required: true }]}>
+                                <Select
+                                    options={[
+                                        { value: 'adm', label: 'Kolam B — Perlakuan (ADM)' },
+                                        { value: 'kontrol', label: 'Kolam A — Kontrol (Timer)' },
+                                    ]}
+                                />
+                            </Form.Item>
+                        </Col>
+                    </Row>
+                    <Row gutter={12}>
+                        <Col span={12}>
+                            <Form.Item name="jumlahPakan" label="Jumlah Pakan Aktual (g)" rules={[{ required: true, message: 'Masukkan pakan' }]}>
+                                <InputNumber style={{ width: '100%' }} min={0} step={1} addonAfter="gram" />
+                            </Form.Item>
+                        </Col>
+                        <Col span={12}>
+                            <Form.Item name="status" label="Status Eksekusi" rules={[{ required: true }]}>
+                                <Select
+                                    options={[
+                                        { value: 'Berhasil', label: 'Berhasil' },
+                                        { value: 'Gagal', label: 'Gagal' },
+                                    ]}
+                                />
+                            </Form.Item>
+                        </Col>
+                    </Row>
+                    <Row gutter={12}>
+                        <Col span={12}>
+                            <Form.Item name="targetPakan" label="Target Fuzzy ADM (g)">
+                                <InputNumber style={{ width: '100%' }} min={0} step={1} placeholder="Opsional" />
+                            </Form.Item>
+                        </Col>
+                        <Col span={12}>
+                            <Form.Item name="durasi" label="Durasi Servo (detik)">
+                                <InputNumber style={{ width: '100%' }} min={0} step={1} placeholder="Opsional" />
+                            </Form.Item>
+                        </Col>
+                    </Row>
+                </Form>
             </Modal>
         </div>
     );
