@@ -17,3 +17,15 @@ def get_sampling():
 def add_sampling(data: SamplingInput, admin: dict = Depends(get_current_admin)):
     """(Admin) Menambahkan data sampling dan menghitung FCR secara otomatis di Firestore (Tahap 7)"""
     return sampling_service.save_sampling(data, created_by=admin.get("sub", "admin"))
+
+
+@router.put("/{sampling_id}")
+def update_sampling(sampling_id: str, data: SamplingInput, admin: dict = Depends(get_current_admin)):
+    """(Admin) Memperbarui data sampling yang sudah ada dan menghitung ulang FCR di Firestore"""
+    return sampling_service.save_sampling(data, created_by=admin.get("sub", "admin"), sampling_id=sampling_id)
+
+
+@router.delete("/{sampling_id}")
+def delete_sampling(sampling_id: str, admin: dict = Depends(get_current_admin)):
+    """(Admin) Menghapus data sampling dari Firestore"""
+    return sampling_service.delete_sampling(sampling_id)

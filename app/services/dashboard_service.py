@@ -29,6 +29,8 @@ def get_dashboard_summary(pond_type: str = "adm") -> dict:
     if sensor_res.get("status") != "success":
         return {
             "status": "empty",
+            "pond_type": sensor_res.get("pond_type", pond_type),
+            "dataset_id": sensor_res.get("dataset_id"),
             "message": sensor_res.get("message", "Belum ada data sensor"),
             "kadar_nh3": "-",
             "status_nh3": "Data Tidak Tersedia"
@@ -39,6 +41,8 @@ def get_dashboard_summary(pond_type: str = "adm") -> dict:
 
     return {
         "status": "success",
+        "pond_type": sensor_res.get("pond_type", pond_type),
+        "dataset_id": sensor_res.get("dataset_id"),
         "kadar_nh3": hasil_nh3["kadar_nh3"],
         "status_nh3": hasil_nh3["status"],
         "status_toksisitas": hasil_nh3["status"],

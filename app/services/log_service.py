@@ -1,6 +1,7 @@
 """
 Logika pencatatan & pembacaan feeding log (Cloud Firestore: feeding_logs).
 """
+import hashlib
 import uuid
 from datetime import datetime, timezone
 
@@ -11,8 +12,22 @@ from app.core.firebase import db, COL_FEEDING_LOGS
 from app.schemas.feeding_log import FeedingLog, DeviceFeedingLogInput
 
 
-def _new_event_id(event_id: str = None) -> str:
-    return event_id or f"log-{uuid.uuid4().hex[:12]}"
+def _new_event_id(event_id: str = None, pond_type: str = None, ts_input: str = None, ts_record: datetime = None) -> str:
+    """
+    Menentukan ID dokumen feeding log.
+
+    - Jika perangkat mengirim `event_id`, gunakan apa adanya.
+    - Jika perangkat mengirim `timestamp` (waktu servo bergerak), ID dibuat deterministik
+      dari pond_type + timestamp, sehingga pengiriman ulang (retry / antrean offline ESP32)
+      tidak menghasilkan dokumen duplikat — cukup menimpa dokumen yang sama.
+    - Selain itu, buat ID acak.
+    """
+    if event_id:
+        return event_id
+    if ts_input and ts_record is not None:
+        key = f"{(pond_type or '').lower()}|{ts_record.astimezone(timezone.utc).replace(microsecond=0).isoformat()}"
+        return f"log-{hashlib.sha1(key.encode()).hexdigest()[:12]}"
+    return f"log-{uuid.uuid4().hex[:12]}"
 
 
 def _format_timestamp(ts):
@@ -82,7 +97,8 @@ def _resolve_timestamp(ts_input: str = None) -> datetime:
 def save_feeding_log(data: FeedingLog, caller: dict) -> str:
     """Menyimpan feeding log dari Admin Dashboard maupun ESP32. Mengembalikan event_id."""
     ts_record = _resolve_timestamp(data.timestamp)
-    event_id = _new_event_id(data.event_id)
+    pond_type = "adm" if "adm" in data.pond_type.lower() else "kontrol"
+    event_id = _new_event_id(data.event_id, pond_type, data.timestamp, ts_record)
 
     is_admin = caller.get("role") == "admin"
     source = "web-dashboard" if is_admin else "esp32"
@@ -91,7 +107,7 @@ def save_feeding_log(data: FeedingLog, caller: dict) -> str:
     try:
         db.collection(COL_FEEDING_LOGS).document(event_id).set({
             "event_id": event_id,
-            "pond_type": "adm" if "adm" in data.pond_type.lower() else "kontrol",
+            "pond_type": pond_type,
             "target_pakan": float(data.target_pakan if data.target_pakan else 0.0),
             "jumlah_pakan": float(data.jumlah_pakan),
             "durasi_servo": int(data.durasi_servo),
@@ -113,7 +129,7 @@ def save_feeding_log(data: FeedingLog, caller: dict) -> str:
 def save_device_feeding_log(data: DeviceFeedingLogInput) -> str:
     """Menyimpan feeding log dari ESP32 terautentikasi. Mengembalikan event_id."""
     ts_record = _resolve_timestamp(data.timestamp)
-    event_id = _new_event_id(data.event_id)
+    event_id = _new_event_id(data.event_id, data.pond_type, data.timestamp, ts_record)
 
     try:
         db.collection(COL_FEEDING_LOGS).document(event_id).set({

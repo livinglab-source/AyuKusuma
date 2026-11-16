@@ -21,6 +21,7 @@ db = firestore.client()
 # Nama koleksi / dokumen Firestore (satu sumber kebenaran)
 COL_SETTINGS = "settings"
 DOC_CALIBRATION = "calibration"
+DOC_CALIBRATION_KONTROL = "calibration_kontrol"
 COL_CONTROL = "control"
 DOC_SERVO_COMMAND = "servo_command"
 COL_FEEDING_LOGS = "feeding_logs"

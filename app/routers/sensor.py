@@ -17,9 +17,8 @@ def get_sensor_history(pond_type: str, hours: int = 24, downsample: bool = True)
     return sensor_service.get_sensor_history(pond_type, hours, downsample)
 
 
-@router.get("/api/dashboard/adm")
 @router.get("/api/dashboard/{pond_type}")
 @router.get("/api/dashboard")
 def get_dashboard(pond_type: str = "adm"):
-    """(Publik) Membaca ringkasan kualitas air, fuzzy ADM, dan toksisitas amonia kolam"""
+    """(Publik) Membaca ringkasan kualitas air, fuzzy ADM, dan toksisitas amonia kolam berdasarkan pond_type"""
     return dashboard_service.get_dashboard_summary(pond_type)

@@ -11,21 +11,25 @@ from dotenv import load_dotenv
 
 # Root proyek (folder yang berisi .env dan secrets/)
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
-load_dotenv(PROJECT_ROOT / ".env")
+load_dotenv(PROJECT_ROOT / ".env", override=True)
 
 
 class Settings:
     APP_TITLE: str = "Smart Feeder API - Living Lab with Pure Cloud Firestore"
 
     # Konfigurasi Gateway Raspi (Research Data Gateway)
-    GATEWAY_API_BASE_URL: str = os.getenv("GATEWAY_API_BASE_URL", "http://127.0.0.1:18088")
-    GATEWAY_DATASET_ID: str = os.getenv("GATEWAY_DATASET_ID", "dst_c2afd87da8491d4c")
-    GATEWAY_API_KEY: str = os.getenv("GATEWAY_API_KEY")
-    GATEWAY_TIMEOUT_SEC: int = 20
+    GATEWAY_API_BASE_URL: str = os.getenv("GATEWAY_API_BASE_URL", "https://research-data-gateway.myact.my.id").rstrip("/")
+    GATEWAY_DATASET_KOLAM_A: str = os.getenv("GATEWAY_DATASET_KOLAM_A", "dst_fde703a09fb3cb06")
+    GATEWAY_DATASET_KOLAM_B: str = os.getenv("GATEWAY_DATASET_KOLAM_B", "dst_1e6020ea929def09")
+    GATEWAY_DATASET_ID: str = os.getenv("GATEWAY_DATASET_ID", "dst_1e6020ea929def09")
+    GATEWAY_API_KEY: str = os.getenv("GATEWAY_API_KEY", "rdg_live_f983d5ce_eQ7f2W5qCWneQfs1Hoc853yCCto5HD0jx0ZdXbOo79Q")
+    GATEWAY_API_KEY_KOLAM_A: str = os.getenv("GATEWAY_API_KEY_KOLAM_A") or GATEWAY_API_KEY
+    GATEWAY_API_KEY_KOLAM_B: str = os.getenv("GATEWAY_API_KEY_KOLAM_B") or GATEWAY_API_KEY
+    GATEWAY_TIMEOUT_SEC: int = 30
 
     # Masa berlaku cache telemetry (sensor mengirim data tiap 30 detik)
-    SENSOR_LATEST_CACHE_TTL: float = 10.0
-    SENSOR_HISTORY_CACHE_TTL: float = 30.0
+    SENSOR_LATEST_CACHE_TTL: float = 15.0
+    SENSOR_HISTORY_CACHE_TTL: float = 60.0
 
     # Admin & Device Security
     JWT_SECRET: str = os.getenv("JWT_SECRET", "smartfeeder_super_secret_jwt_key_livinglab_2026_bali_secure_key")

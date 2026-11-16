@@ -2,31 +2,110 @@
 Logika pembacaan telemetry dari Research Data Gateway (Raspberry Pi),
 kalibrasi sensor dinamis, downsampling grafik, dan cache in-memory.
 """
+import socket
 import time
 from datetime import datetime, timezone, timedelta
 
 import requests
+import urllib3.util.connection as urllib3_conn
 
 from app.core.config import settings
 from app.services.calibration_service import CalibrationData, get_calibration_params
 from app.services.fuzzy_service import hitung_status_fuzzy
 
-# Cache in-memory untuk telemetry Gateway (menghemat query SSH tunnel & mencegah timeout)
-_sensor_latest_cache = {"timestamp": 0.0, "response": None}
-_sensor_history_cache = {}  # key: f"{pond_type}_{hours}_{downsample}" -> {"timestamp": 0.0, "response": None}
+# Paksa IPv4 (AF_INET) agar koneksi ke Cloudflare (research-data-gateway.myact.my.id)
+# tidak mengalami ConnectTimeout akibat percobaan IPv6 pada jaringan lokal Windows.
+urllib3_conn.allowed_gai_family = lambda: socket.AF_INET
+
+# Cache in-memory untuk telemetry Gateway per kolam (menghemat query & mencegah timeout)
+_sensor_latest_cache = {}   # key: f"{pond_key}_{dataset_id}" -> {"timestamp": 0.0, "response": None}
+_sensor_history_cache = {}  # key: f"{pond_key}_{dataset_id}_{hours}_{downsample}" -> {"timestamp": 0.0, "response": None}
 
 EMPTY_HISTORY = {"suhu": [], "do": [], "ph": [], "tds": []}
 
+# Pemetaan dinamis parameter kolam ke ID dataset Research Data Gateway:
+# - Kolam A (Kontrol) : dst_fde703a09fb3cb06
+# - Kolam B (ADM)     : dst_1e6020ea929def09
+POND_DATASET_MAP = {
+    "kontrol": settings.GATEWAY_DATASET_KOLAM_A,
+    "kolam_a": settings.GATEWAY_DATASET_KOLAM_A,
+    "kolam-a": settings.GATEWAY_DATASET_KOLAM_A,
+    "a": settings.GATEWAY_DATASET_KOLAM_A,
+    "timer": settings.GATEWAY_DATASET_KOLAM_A,
+    "adm": settings.GATEWAY_DATASET_KOLAM_B,
+    "perlakuan": settings.GATEWAY_DATASET_KOLAM_B,
+    "kolam_b": settings.GATEWAY_DATASET_KOLAM_B,
+    "kolam-b": settings.GATEWAY_DATASET_KOLAM_B,
+    "b": settings.GATEWAY_DATASET_KOLAM_B,
+}
 
-def _gateway_metrics_url(page: int, page_size: int) -> str:
+
+def resolve_pond_dataset(pond_type: str = "adm") -> tuple[str, str]:
+    """Menentukan (normalized_pond_type, dataset_id) secara dinamis berdasarkan parameter pond_type."""
+    clean = (pond_type or "adm").strip().lower()
+    if clean in ("kontrol", "kolam_a", "kolam-a", "a", "timer") or "kontrol" in clean or "kolam_a" in clean:
+        return "kontrol", POND_DATASET_MAP["kontrol"]
+    return "adm", POND_DATASET_MAP["adm"]
+
+
+def _gateway_metrics_url(page: int, page_size: int, dataset_id: str = None) -> str:
+    target_dataset = dataset_id or settings.GATEWAY_DATASET_KOLAM_B
     return (
-        f"{settings.GATEWAY_API_BASE_URL}/api/v1/external/datasets/{settings.GATEWAY_DATASET_ID}"
+        f"{settings.GATEWAY_API_BASE_URL}/api/v1/external/datasets/{target_dataset}"
         f"/telemetry/metrics?page={page}&page_size={page_size}&sort=desc"
     )
 
 
-def _gateway_headers() -> dict:
-    return {"X-API-Key": settings.GATEWAY_API_KEY}
+def _gateway_headers(pond_key: str = "adm") -> dict:
+    if pond_key == "kontrol":
+        api_key = settings.GATEWAY_API_KEY_KOLAM_A or settings.GATEWAY_API_KEY
+    else:
+        api_key = settings.GATEWAY_API_KEY_KOLAM_B or settings.GATEWAY_API_KEY
+    return {
+        "X-API-Key": api_key,
+        "Accept": "application/json",
+        "User-Agent": "curl/8.7.1",
+        "Connection": "close",
+    }
+
+
+def _gateway_get_json(page: int, page_size: int, dataset_id: str, pond_key: str, sort: str = "desc") -> dict:
+    """
+    Memanggil endpoint telemetry/metrics di Research Data Gateway berdasarkan dataset_id kolam.
+    """
+    url = (
+        f"{settings.GATEWAY_API_BASE_URL}/api/v1/external/datasets/{dataset_id}"
+        f"/telemetry/metrics?page={page}&page_size={page_size}&sort={sort}"
+    )
+    last_err = None
+    for _ in range(2):
+        try:
+            res = requests.get(
+                url,
+                headers=_gateway_headers(pond_key),
+                timeout=(6, 15),
+            )
+            if res.status_code == 200:
+                return res.json()
+            last_err = f"HTTP {res.status_code}: {res.text[:200]}"
+        except Exception as e:
+            last_err = str(e)
+
+    raise RuntimeError(last_err or f"Gagal mengambil data dataset {dataset_id}")
+
+
+def invalidate_sensor_cache(pond_type: str = None) -> None:
+    """Menghapus cache telemetri agar perubahan kalibrasi langsung terlihat di dashboard & grafik."""
+    if pond_type is None:
+        _sensor_latest_cache.clear()
+        _sensor_history_cache.clear()
+        return
+
+    pond_key, _ = resolve_pond_dataset(pond_type)
+    for k in [k for k in _sensor_latest_cache if k.startswith(f"{pond_key}_")]:
+        _sensor_latest_cache.pop(k, None)
+    for k in [k for k in _sensor_history_cache if k.startswith(f"{pond_key}_")]:
+        _sensor_history_cache.pop(k, None)
 
 
 def hitung_kalibrasi_sensor(
@@ -35,14 +114,15 @@ def hitung_kalibrasi_sensor(
     v_tds: float,
     cal: CalibrationData,
     fallback_ph: float = None,
-    fallback_tds: float = None
+    fallback_tds: float = None,
+    pond_type: str = "adm",
 ):
-    offset_suhu = float(cal.offset_suhu) if cal and cal.offset_suhu is not None else 0.25
+    default_offset = 0.0 if pond_type == "kontrol" else 0.25
+    offset_suhu = float(cal.offset_suhu) if cal and cal.offset_suhu is not None else default_offset
 
     # 1. Kalibrasi Suhu (DS18B20)
-    # Gateway menerima data suhu dari ESP32 dengan default offset awal 0.25.
-    # Koreksi nilai suhu secara dinamis sesuai offset_suhu yang diinputkan user:
-    if raw_suhu is not None and raw_suhu > 0:
+    # Kolam B (adm) mengirim data suhu dengan default offset awal 0.25; Kolam A (kontrol) mengirim suhu mentah.
+    if raw_suhu is not None and raw_suhu > 0 and pond_type == "adm":
         suhu_kalibrasi = round((float(raw_suhu) - 0.25) + offset_suhu, 1)
     else:
         suhu_kalibrasi = round(float(raw_suhu) + offset_suhu, 1) if raw_suhu is not None else 25.0
@@ -91,37 +171,42 @@ def hitung_kalibrasi_sensor(
 
 
 def get_latest_sensor(pond_type: str = "adm") -> dict:
-    """Membaca telemetry terbaru dari Gateway lalu menerapkan kalibrasi & fuzzy"""
+    """Membaca telemetry terbaru dari Gateway sesuai pond_type lalu menerapkan kalibrasi & fuzzy"""
+    pond_key, dataset_id = resolve_pond_dataset(pond_type)
+    cache_key = f"{pond_key}_{dataset_id}"
     now_ts = time.time()
+    cached = _sensor_latest_cache.get(cache_key)
     # Cache hit valid selama 10 detik (sensor kirim data tiap 30 detik)
-    if _sensor_latest_cache["response"] and (now_ts - _sensor_latest_cache["timestamp"] < settings.SENSOR_LATEST_CACHE_TTL):
-        return _sensor_latest_cache["response"]
+    if cached and (now_ts - cached["timestamp"] < settings.SENSOR_LATEST_CACHE_TTL):
+        return cached["response"]
 
     try:
-        res = requests.get(_gateway_metrics_url(1, 1), headers=_gateway_headers(), timeout=settings.GATEWAY_TIMEOUT_SEC)
-        res.raise_for_status()
-        payload = res.json()
+        payload = _gateway_get_json(1, 1, dataset_id=dataset_id, pond_key=pond_key, sort="desc")
 
         items = payload.get("data", {}).get("items", [])
         if not items:
-            return {"status": "empty", "data": {}}
+            if cached and cached.get("response"):
+                return cached["response"]
+            return {"status": "empty", "pond_type": pond_key, "dataset_id": dataset_id, "data": {}}
 
         latest = items[0]
-        raw_suhu = float(latest.get("suhu", 0.0))
-        raw_ph = float(latest.get("ph", 0.0))
-        raw_tds = float(latest.get("tds", 0.0))
-        v_ph = float(latest.get("v_ph", 0.0))
-        v_tds = float(latest.get("v_tds", 0.0))
-        do_val = 6.0  # Standar DO
+        raw_suhu = float(latest.get("suhu") or 0.0)
+        raw_ph = float(latest.get("ph") or 0.0)
+        raw_tds = float(latest.get("tds") or 0.0)
+        v_ph = float(latest.get("v_ph") or 0.0)
+        v_tds = float(latest.get("v_tds") or 0.0)
+        do_val = float(latest.get("do") or 6.0)  # Standar DO
 
-        cal = get_calibration_params()
+        cal = get_calibration_params(pond_key)
         suhu, ph, tds = hitung_kalibrasi_sensor(
-            raw_suhu, v_ph, v_tds, cal, fallback_ph=raw_ph, fallback_tds=raw_tds
+            raw_suhu, v_ph, v_tds, cal, fallback_ph=raw_ph, fallback_tds=raw_tds, pond_type=pond_key
         )
 
         fuzzy_info = hitung_status_fuzzy(suhu, do_val, ph, tds)
 
         result = {
+            "pond_type": pond_key,
+            "dataset_id": dataset_id,
             "timestamp": latest.get("timestamp"),
             "suhu": suhu,
             "do": do_val,
@@ -136,29 +221,26 @@ def get_latest_sensor(pond_type: str = "adm") -> dict:
             **fuzzy_info
         }
 
-        resp_data = {"status": "success", "data": result}
-        _sensor_latest_cache["timestamp"] = time.time()
-        _sensor_latest_cache["response"] = resp_data
+        resp_data = {"status": "success", "pond_type": pond_key, "dataset_id": dataset_id, "data": result}
+        _sensor_latest_cache[cache_key] = {"timestamp": time.time(), "response": resp_data}
         return resp_data
     except Exception as e:
-        print(f"[GATEWAY API ERROR - LATEST]: {e}")
+        print(f"[GATEWAY API ERROR - LATEST ({pond_key}/{dataset_id})]: {e}")
         # Gunakan data cache terakhir bila terjadi timeout atau gateway sibuk
-        if _sensor_latest_cache["response"]:
-            return _sensor_latest_cache["response"]
-        return {"status": "error", "message": str(e), "data": {}}
+        if cached and cached.get("response"):
+            return cached["response"]
+        return {"status": "error", "pond_type": pond_key, "dataset_id": dataset_id, "message": str(e), "data": {}}
 
 
-def _fetch_raw_history(hours: int) -> list:
-    """Mengambil telemetry mentah dari Gateway (maks 5 halaman / 2000 titik) dalam rentang `hours` jam"""
+def _fetch_raw_history(hours: int, dataset_id: str = None, pond_key: str = "adm") -> list:
+    """Mengambil telemetry mentah dari Gateway dalam rentang `hours` jam"""
     all_raw_items = []
     page = 1
-    page_size = 1000
+    page_size = 200
     cutoff = datetime.now(timezone.utc) - timedelta(hours=hours)
 
     while True:
-        res = requests.get(_gateway_metrics_url(page, page_size), headers=_gateway_headers(), timeout=settings.GATEWAY_TIMEOUT_SEC)
-        res.raise_for_status()
-        payload = res.json()
+        payload = _gateway_get_json(page, page_size, dataset_id=dataset_id, pond_key=pond_key, sort="desc")
         data_block = payload.get("data", {})
         items = data_block.get("items", [])
         if not items:
@@ -193,9 +275,9 @@ def _fetch_raw_history(hours: int) -> list:
     return all_raw_items
 
 
-def _calibrate_items(all_raw_items: list) -> list:
-    """Kalibrasi setiap raw item sesuai parameter kalibrasi yang diinput user"""
-    cal = get_calibration_params()
+def _calibrate_items(all_raw_items: list, pond_type: str = "adm") -> list:
+    """Kalibrasi setiap raw item sesuai parameter kalibrasi kolam yang diminta"""
+    cal = get_calibration_params(pond_type)
     calibrated_raw_items = []
     for it in all_raw_items:
         it_suhu = float(it["suhu"]) if it.get("suhu") is not None else 0.0
@@ -205,7 +287,7 @@ def _calibrate_items(all_raw_items: list) -> list:
         it_tds = float(it["tds"]) if it.get("tds") is not None else 0.0
 
         c_suhu, c_ph, c_tds = hitung_kalibrasi_sensor(
-            it_suhu, it_v_ph, it_v_tds, cal, fallback_ph=it_ph, fallback_tds=it_tds
+            it_suhu, it_v_ph, it_v_tds, cal, fallback_ph=it_ph, fallback_tds=it_tds, pond_type=pond_type
         )
 
         new_it = dict(it)
@@ -274,8 +356,9 @@ def _downsample(all_raw_items: list, latest_item_raw: dict) -> list:
 
 
 def get_sensor_history(pond_type: str, hours: int = 24, downsample: bool = True) -> dict:
-    """Membaca riwayat kualitas air terkalibrasi untuk grafik dashboard"""
-    cache_key = f"{pond_type}_{hours}_{downsample}"
+    """Membaca riwayat kualitas air terkalibrasi untuk grafik dashboard sesuai pond_type"""
+    pond_key, dataset_id = resolve_pond_dataset(pond_type)
+    cache_key = f"{pond_key}_{dataset_id}_{hours}_{downsample}"
     now_ts = time.time()
     cached = _sensor_history_cache.get(cache_key)
     # Cache hit valid selama 30 detik (sensor kirim data tiap 30 detik)
@@ -283,11 +366,11 @@ def get_sensor_history(pond_type: str, hours: int = 24, downsample: bool = True)
         return cached["response"]
 
     try:
-        all_raw_items = _fetch_raw_history(hours)
+        all_raw_items = _fetch_raw_history(hours, dataset_id=dataset_id, pond_key=pond_key)
         if not all_raw_items:
-            return {"status": "success", "data": {k: [] for k in EMPTY_HISTORY}}
+            return {"status": "success", "pond_type": pond_key, "dataset_id": dataset_id, "data": {k: [] for k in EMPTY_HISTORY}}
 
-        all_raw_items = _calibrate_items(all_raw_items)
+        all_raw_items = _calibrate_items(all_raw_items, pond_type=pond_key)
         latest_item_raw = all_raw_items[0]
         all_raw_items.reverse()
 
@@ -308,12 +391,12 @@ def get_sensor_history(pond_type: str, hours: int = 24, downsample: bool = True)
                 history_data["tds"].append({"time": ts, "value": round(float(item["tds"]), 2)})
             history_data["do"].append({"time": ts, "value": 6.0})
 
-        resp_data = {"status": "success", "data": history_data}
+        resp_data = {"status": "success", "pond_type": pond_key, "dataset_id": dataset_id, "data": history_data}
         _sensor_history_cache[cache_key] = {"timestamp": time.time(), "response": resp_data}
         return resp_data
     except Exception as e:
-        print(f"[GATEWAY API ERROR - HISTORY]: {e}")
+        print(f"[GATEWAY API ERROR - HISTORY ({pond_key}/{dataset_id})]: {e}")
         # Kembalikan data cache terakhir jika gateway timeout atau sibuk
         if cached:
             return cached["response"]
-        return {"status": "error", "message": str(e), "data": {k: [] for k in EMPTY_HISTORY}}
+        return {"status": "error", "pond_type": pond_key, "dataset_id": dataset_id, "message": str(e), "data": {k: [] for k in EMPTY_HISTORY}}

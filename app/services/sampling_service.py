@@ -89,21 +89,36 @@ def _sum_adm_feed_all() -> float:
 
 
 def hitung_fcr_otomatis(data: SamplingInput):
-    """Menghitung FCR = total pakan / pertambahan biomassa. Return (total_pakan, selisih, fcr)."""
-    selisih_biomassa = data.berat_akhir - data.berat_awal
-    if selisih_biomassa <= 0:
+    """
+    Menghitung FCR berdasarkan standar biologi perikanan:
+    FCR = F / (Wt + D - W0)
+      F  : Total pakan yang diberikan (gram/kg)
+      Wt : Biomassa / berat akhir ikan hidup (gram/kg)
+      D  : Bobot ikan yang mati selama periode (gram/kg)
+      W0 : Biomassa / berat awal saat tebar (gram/kg)
+    Penyebut (Wt + D - W0) merupakan total pertambahan daging/biomassa riil.
+    Return (total_pakan, net_biomassa, nilai_fcr).
+    """
+    berat_mati = float(data.berat_kematian or 0.0)
+    net_biomassa = (float(data.berat_akhir) + berat_mati) - float(data.berat_awal)
+    if net_biomassa <= 0:
         raise HTTPException(
             status_code=400,
-            detail=f"Pertambahan biomassa nol atau negatif ({round(selisih_biomassa, 2)} gram). Nilai FCR tidak dapat dihitung."
+            detail=(
+                f"Pertambahan biomassa plus kematian nol atau negatif "
+                f"(Wt={data.berat_akhir} + D={berat_mati} - W0={data.berat_awal} = {round(net_biomassa, 2)} gram). "
+                f"Nilai FCR tidak dapat dihitung."
+            )
         )
 
     if _is_adm(data.kolam):
-        # Kolam ADM: hitung total pakan otomatis dari feeding_logs di Cloud Firestore
-        if data.tgl_mulai and data.tgl_akhir:
+        # Kolam ADM: prioritaskan nilai jumlah_pakan eksplisit jika diisi/diedit oleh admin,
+        # atau hitung otomatis dari feeding_logs pada rentang tanggal yang dipilih
+        if data.jumlah_pakan is not None and data.jumlah_pakan > 0:
+            total_pakan = float(data.jumlah_pakan)
+        elif data.tgl_mulai and data.tgl_akhir:
             t_start, t_end = _parse_range(data.tgl_mulai, data.tgl_akhir)
             total_pakan = _sum_adm_feed_in_range(t_start, t_end)
-        elif data.jumlah_pakan is not None and data.jumlah_pakan > 0:
-            total_pakan = float(data.jumlah_pakan)
         else:
             # Rentang tanggal belum diisi: ambil seluruh log ADM yang berhasil
             total_pakan = _sum_adm_feed_all()
@@ -116,8 +131,8 @@ def hitung_fcr_otomatis(data: SamplingInput):
     if total_pakan <= 0:
         raise HTTPException(status_code=400, detail="Total pakan terakumulasi 0 gram. Belum ada feeding log valid pada periode yang dipilih.")
 
-    nilai_fcr = round(total_pakan / selisih_biomassa, 2)
-    return total_pakan, selisih_biomassa, nilai_fcr
+    nilai_fcr = round(total_pakan / net_biomassa, 2)
+    return total_pakan, net_biomassa, nilai_fcr
 
 
 def list_sampling() -> list:
@@ -133,7 +148,10 @@ def list_sampling() -> list:
                 "kolam": d.get("kolam", "Perlakuan (A)"),
                 "berat_awal": float(d.get("berat_awal", 0.0)),
                 "berat_akhir": float(d.get("berat_akhir", 0.0)),
+                "berat_kematian": float(d.get("berat_kematian", 0.0)),
+                "jumlah_mati": int(d.get("jumlah_mati", 0)),
                 "jumlah_pakan": float(d.get("jumlah_pakan", 0.0)),
+                "selisih_biomassa": float(d.get("selisih_biomassa", 0.0)),
                 "fcr": float(d.get("fcr", 0.0)),
                 "start_date": d.get("start_date") or d.get("tgl_mulai"),
                 "end_date": d.get("end_date") or d.get("tgl_akhir")
@@ -143,27 +161,45 @@ def list_sampling() -> list:
     return results
 
 
-def save_sampling(data: SamplingInput, created_by: str) -> dict:
-    """Menghitung FCR lalu menyimpan hasil sampling ke Firestore"""
-    total_pakan, selisih_biomassa, nilai_fcr = hitung_fcr_otomatis(data)
+def save_sampling(data: SamplingInput, created_by: str, sampling_id: str = None) -> dict:
+    """Menghitung FCR lalu menyimpan atau memperbarui hasil sampling ke Firestore"""
+    berat_mati = float(data.berat_kematian or 0.0)
+    jumlah_mati = int(data.jumlah_mati or 0)
+    total_pakan, net_biomassa, nilai_fcr = hitung_fcr_otomatis(data)
     now = datetime.now(timezone.utc)
-    doc_id = f"fcr-m{data.minggu_ke}-{data.kolam.replace(' ', '_').lower()}"
+    is_target_adm = _is_adm(data.kolam)
+    pond_key = "adm" if is_target_adm else "kontrol"
+    doc_id = sampling_id or f"fcr-m{data.minggu_ke}-{pond_key}"
 
     sampling_doc = {
         "minggu_ke": data.minggu_ke,
-        "kolam": data.kolam,
+        "kolam": pond_key,
         "berat_awal": float(data.berat_awal),
         "berat_akhir": float(data.berat_akhir),
-        "selisih_biomassa": float(selisih_biomassa),
+        "berat_kematian": berat_mati,
+        "jumlah_mati": jumlah_mati,
+        "selisih_biomassa": float(net_biomassa),
         "jumlah_pakan": float(total_pakan),
         "fcr": float(nilai_fcr),
         "start_date": data.tgl_mulai,
         "end_date": data.tgl_akhir,
+        "updated_at": now,
         "created_at": now,
-        "created_by": created_by
+        "created_by": created_by,
     }
 
     try:
+        # Bersihkan dokumen lama pada minggu & kolam yang sama jika memiliki ID berbeda
+        for existing in db.collection(COL_SAMPLING_FCR).where("minggu_ke", "==", data.minggu_ke).stream():
+            ex_dict = existing.to_dict() or {}
+            if _is_adm(ex_dict.get("kolam", "")) == is_target_adm and existing.id != doc_id:
+                db.collection(COL_SAMPLING_FCR).document(existing.id).delete()
+
+        # Jika mengedit dan mengubah minggu/kolam dari sampling_id awal, hapus dokumen lama
+        if sampling_id and sampling_id != f"fcr-m{data.minggu_ke}-{pond_key}":
+            db.collection(COL_SAMPLING_FCR).document(sampling_id).delete()
+            doc_id = f"fcr-m{data.minggu_ke}-{pond_key}"
+
         db.collection(COL_SAMPLING_FCR).document(doc_id).set(sampling_doc)
     except Exception as e:
         print(f"[FIRESTORE SAMPLING SAVE ERROR]: {e}")
@@ -171,8 +207,24 @@ def save_sampling(data: SamplingInput, created_by: str) -> dict:
 
     return {
         "status": "success",
-        "message": f"Data sampling minggu ke-{data.minggu_ke} ({data.kolam}) berhasil dihitung & disimpan di Firestore",
+        "id": doc_id,
+        "message": f"Data sampling minggu ke-{data.minggu_ke} ({'Kolam B (ADM)' if is_target_adm else 'Kolam A (Kontrol)'}) berhasil dihitung & disimpan di Firestore",
         "fcr": nilai_fcr,
         "total_pakan": total_pakan,
-        "selisih_biomassa": selisih_biomassa
+        "selisih_biomassa": net_biomassa,
+        "berat_kematian": berat_mati,
+    }
+
+
+def delete_sampling(sampling_id: str) -> dict:
+    """Menghapus data sampling FCR dari Firestore berdasarkan ID dokumen"""
+    try:
+        db.collection(COL_SAMPLING_FCR).document(sampling_id).delete()
+    except Exception as e:
+        print(f"[FIRESTORE SAMPLING DELETE ERROR]: {e}")
+        raise HTTPException(status_code=500, detail=f"Gagal menghapus data sampling dari Firestore: {e}")
+    return {
+        "status": "success",
+        "id": sampling_id,
+        "message": "Data sampling berhasil dihapus dari Firestore",
     }
