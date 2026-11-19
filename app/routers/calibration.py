@@ -1,4 +1,5 @@
-from fastapi import APIRouter, Depends
+from typing import Optional
+from fastapi import APIRouter, Depends, Header, Request
 
 from app.core.security import get_current_admin
 from app.schemas.calibration import CalibrationConfig
@@ -9,12 +10,20 @@ router = APIRouter(prefix="/api/calibration", tags=["Calibration"])
 
 @router.get("")
 @router.get("/{pond_type}")
-def get_calibration(pond_type: str = "adm"):
-    """(Publik) Membaca parameter kalibrasi sensor & jadwal pakan dari Firestore berdasarkan pond_type"""
+def get_calibration(
+    request: Request,
+    pond_type: str = "adm",
+    x_device_key: Optional[str] = Header(default=None, alias="X-Device-Key"),
+):
+    """(Publik / ESP32) Membaca parameter kalibrasi sensor & jadwal pakan dari Firestore berdasarkan pond_type"""
     pond_key = calibration_service.resolve_calibration_pond(pond_type)
-    if pond_key == "adm":
-        device_service.mark_device_seen()  # ESP32 Kolam B melakukan polling endpoint ini
-    return calibration_service.get_calibration_config(pond_key)
+    ua = (request.headers.get("user-agent") or "").lower()
+    if x_device_key or "esp32" in ua or "arduino" in ua:
+        device_service.mark_device_seen()
+        calibration_service.mark_calibration_synced(pond_key)
+    cfg = calibration_service.get_calibration_config(pond_key)
+    cfg["local_ip"] = device_service.get_local_ip()
+    return cfg
 
 
 @router.post("")

@@ -1,6 +1,14 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
+    // Izinkan pembacaan publik (read-only) hanya pada dokumen kalibrasi (settings/calibration & settings/calibration_kontrol)
+    // agar perangkat ESP32 di kolam selalu dapat menyinkronkan parameter kalibrasi terbaru langsung dari Cloud Firestore
+    // meskipun IP laptop berubah atau backend lokal sedang tidak satu jaringan. Penulisan tetap wajib melalui FastAPI Admin.
+    match /settings/{docId} {
+      allow read: if true;
+      allow write: if false;
+    }
+
     // Sesuai Tahap 6 & Tahap 9 Checklist:
     // Menolak semua akses klien langsung (Web Client SDK, Mobile SDK, direct REST tanpa Firebase Admin).
     // Seluruh operasi pembacaan dan penulisan wajib melalui FastAPI Backend yang terotentikasi via Firebase Admin SDK.

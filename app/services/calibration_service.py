@@ -9,23 +9,23 @@ from app.core.firebase import db, COL_SETTINGS, DOC_CALIBRATION, DOC_CALIBRATION
 from app.schemas.calibration import CalibrationConfig
 
 DEFAULT_CALIBRATION_ADM = {
-    "offset_suhu": 0.25,
-    "ph_401": 1.4638,
-    "ph_686": 1.7832,
-    "ph_918": 1.9691,
-    "tds_k": 1.0,
-    "feeder_g_per_s": 15.0,
+    "offset_suhu": 0.31,
+    "ph_401": 0.4625,
+    "ph_686": 0.9109,
+    "ph_918": 1.4478,
+    "tds_k": 1.5214,
+    "feeder_g_per_s": 5.0,
     "jam_pakan_1": 9,
     "menit_pakan_1": 0,
-    "jam_pakan_2": 16,
+    "jam_pakan_2": 15,
     "menit_pakan_2": 0,
 }
 
 DEFAULT_CALIBRATION_KONTROL = {
     "offset_suhu": 0.0,
-    "ph_401": 1.6500,
-    "ph_686": 2.0300,
-    "ph_918": 2.1000,
+    "ph_401": 1.7500,
+    "ph_686": 2.1035,
+    "ph_918": 2.5300,
     "tds_k": 1.0,
     "feeder_g_per_s": 0.0,
     "jam_pakan_1": 9,
@@ -33,6 +33,19 @@ DEFAULT_CALIBRATION_KONTROL = {
     "jam_pakan_2": 16,
     "menit_pakan_2": 0,
 }
+
+# Pelacakan waktu terakhir ESP32 menarik konfigurasi kalibrasi per kolam
+_last_device_cal_sync = {"adm": None, "kontrol": None}
+
+
+def mark_calibration_synced(pond_type: str = "adm") -> None:
+    pond_key = resolve_calibration_pond(pond_type)
+    _last_device_cal_sync[pond_key] = datetime.now(timezone.utc).isoformat()
+
+
+def get_last_calibration_sync(pond_type: str = "adm"):
+    pond_key = resolve_calibration_pond(pond_type)
+    return _last_device_cal_sync.get(pond_key)
 
 # Alias kompatibilitas
 DEFAULT_CALIBRATION = DEFAULT_CALIBRATION_ADM
@@ -115,11 +128,12 @@ def get_calibration_config(pond_type: str = "adm") -> dict:
                 "jam_pakan_2": int(d.get("jam_pakan_2", defaults["jam_pakan_2"])),
                 "menit_pakan_2": int(d.get("menit_pakan_2", defaults["menit_pakan_2"])),
                 "updated_at": str(d.get("updated_at", "")),
+                "last_device_sync": get_last_calibration_sync(pond_key),
             }
     except Exception as e:
         print(f"[FIRESTORE GET CALIBRATION ERROR ({pond_key})]: {e}")
 
-    return {"pond_type": pond_key, **defaults, "updated_at": ""}
+    return {"pond_type": pond_key, **defaults, "updated_at": "", "last_device_sync": get_last_calibration_sync(pond_key)}
 
 
 def update_calibration(data: CalibrationConfig, updated_by: str, pond_type: str = "adm") -> None:

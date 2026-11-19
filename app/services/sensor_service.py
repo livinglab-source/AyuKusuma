@@ -117,26 +117,20 @@ def hitung_kalibrasi_sensor(
     fallback_tds: float = None,
     pond_type: str = "adm",
 ):
-    default_offset = 0.0 if pond_type == "kontrol" else 0.25
+    default_offset = 0.0 if pond_type == "kontrol" else 0.31
     offset_suhu = float(cal.offset_suhu) if cal and cal.offset_suhu is not None else default_offset
 
-    # 1. Kalibrasi Suhu (DS18B20)
-    # Kolam B (adm) mengirim data suhu dengan default offset awal 0.25; Kolam A (kontrol) mengirim suhu mentah.
-    if raw_suhu is not None and raw_suhu > 0 and pond_type == "adm":
-        suhu_kalibrasi = round((float(raw_suhu) - 0.25) + offset_suhu, 1)
-    else:
-        suhu_kalibrasi = round(float(raw_suhu) + offset_suhu, 1) if raw_suhu is not None else 25.0
+    # Estimasi suhu awal untuk kompensasi pH & TDS
+    est_suhu = float(raw_suhu) if (raw_suhu is not None and raw_suhu > 0) else 25.0
 
-    # 2. Kalibrasi pH
-    # Dihitung dari v_ph (tegangan raw probe pH) dengan kurva interpolasi 3-titik (buffer 4.01, 6.86, 9.18)
-    # serta faktor kompensasi suhu air aktual
+    # 1. Hitung pH terkalibrasi dari v_ph (tegangan mentah probe pH)
     ph_kalibrasi = fallback_ph
     if v_ph is not None and v_ph > 0 and cal:
         ph_401 = float(cal.ph_401) if cal.ph_401 is not None else 1.4638
         ph_686 = float(cal.ph_686) if cal.ph_686 is not None else 1.7832
         ph_918 = float(cal.ph_918) if cal.ph_918 is not None else 1.9691
 
-        faktor_suhu = (suhu_kalibrasi + 273.15) / 298.15
+        faktor_suhu = (est_suhu + 273.15) / 298.15
         if v_ph < ph_686:
             if ph_686 != ph_401:
                 slope_acid = ((6.86 - 4.01) / (ph_686 - ph_401)) * faktor_suhu
@@ -153,12 +147,11 @@ def hitung_kalibrasi_sensor(
     elif fallback_ph is not None:
         ph_kalibrasi = round(float(fallback_ph), 2)
 
-    # 3. Kalibrasi TDS
-    # Dihitung dari v_tds (tegangan raw probe TDS) dengan kompensasi suhu aktual dan faktor pengali tds_k
+    # 2. Hitung TDS terkalibrasi dari v_tds (tegangan mentah probe TDS)
     tds_kalibrasi = fallback_tds
     if v_tds is not None and v_tds > 0 and cal:
         tds_k = float(cal.tds_k) if cal.tds_k is not None else 1.0
-        temp_coef = 1.0 + 0.02 * (suhu_kalibrasi - 25.0)
+        temp_coef = 1.0 + 0.02 * (est_suhu - 25.0)
         v_comp = v_tds / temp_coef if temp_coef != 0 else v_tds
         raw_tds = (133.42 * (v_comp ** 3)) - (255.86 * (v_comp ** 2)) + (857.39 * v_comp)
         tds_val = max(raw_tds * tds_k, 0.0)
@@ -166,6 +159,31 @@ def hitung_kalibrasi_sensor(
     elif fallback_tds is not None:
         tds_k = float(cal.tds_k) if cal and cal.tds_k is not None else 1.0
         tds_kalibrasi = round(float(fallback_tds) * tds_k, 0)
+
+    # 3. Deteksi apakah paket telemetri di Raspi sudah dikalibrasi oleh ESP32 dengan parameter terbaru
+    ph_synced = (
+        fallback_ph is not None
+        and ph_kalibrasi is not None
+        and abs(float(fallback_ph) - float(ph_kalibrasi)) <= 0.15
+    )
+    tds_synced = (
+        fallback_tds is not None
+        and tds_kalibrasi is not None
+        and abs(float(fallback_tds) - float(tds_kalibrasi)) <= 15.0
+    )
+    is_telemetry_synced = bool(ph_synced and tds_synced)
+
+    # 4. Kalibrasi Suhu (DS18B20):
+    # Jika ESP32 sudah menyinkronkan kalibrasi, nilai `raw_suhu` di Raspi sudah mengandung `offset_suhu` (hindari double-offset).
+    if raw_suhu is not None and raw_suhu > 0:
+        if is_telemetry_synced:
+            suhu_kalibrasi = round(float(raw_suhu), 1)
+        elif pond_type == "adm":
+            suhu_kalibrasi = round((float(raw_suhu) - 0.25) + offset_suhu, 1)
+        else:
+            suhu_kalibrasi = round(float(raw_suhu) + offset_suhu, 1)
+    else:
+        suhu_kalibrasi = 25.0
 
     return suhu_kalibrasi, ph_kalibrasi, tds_kalibrasi
 
@@ -201,6 +219,9 @@ def get_latest_sensor(pond_type: str = "adm") -> dict:
         suhu, ph, tds = hitung_kalibrasi_sensor(
             raw_suhu, v_ph, v_tds, cal, fallback_ph=raw_ph, fallback_tds=raw_tds, pond_type=pond_key
         )
+        is_telemetry_synced = bool(
+            abs(float(raw_ph) - float(ph)) <= 0.15 and abs(float(raw_tds) - float(tds)) <= 15.0
+        )
 
         fuzzy_info = hitung_status_fuzzy(suhu, do_val, ph, tds)
 
@@ -214,9 +235,10 @@ def get_latest_sensor(pond_type: str = "adm") -> dict:
             "tds": tds,
             "v_ph": v_ph,
             "v_tds": v_tds,
-            "raw_suhu": raw_suhu,
-            "raw_ph": raw_ph,
-            "raw_tds": raw_tds,
+            "raw_suhu": round(raw_suhu, 2),
+            "raw_ph": round(raw_ph, 2),
+            "raw_tds": round(raw_tds, 0),
+            "is_telemetry_synced": is_telemetry_synced,
             "feeder_g_per_s": cal.feeder_g_per_s,
             **fuzzy_info
         }
